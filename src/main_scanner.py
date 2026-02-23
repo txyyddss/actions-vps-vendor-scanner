@@ -16,7 +16,7 @@ from src.hidden_scanner.whmcs.pid_scanner import scan_whmcs_pids
 from src.misc.config_loader import dump_json, load_config, load_sites
 from src.misc.dashboard_generator import generate_dashboard
 from src.misc.http_client import HttpClient
-from src.misc.logger import setup_logging
+from src.misc.logger import get_logger, setup_logging
 from src.misc.telegram_sender import TelegramSender
 from src.others.data_merge import diff_products, load_products, merge_records, write_products
 from src.others.state_store import StateStore
@@ -44,38 +44,51 @@ def _save_tmp(name: str, payload: list[dict[str, Any]]) -> None:
 
 def _discover_mode(sites: list[dict[str, Any]], config: dict[str, Any], http_client: HttpClient) -> list[dict[str, Any]]:
     scanner_cfg = config.get("scanner", {})
-    discoverer = LinkDiscoverer(
+    logger = get_logger("main_scanner")
+    discover_site_workers = max(1, int(scanner_cfg.get("discoverer_max_workers", scanner_cfg.get("max_workers", 12))))
+    site_discoverer = LinkDiscoverer(
         http_client=http_client,
         max_depth=int(scanner_cfg.get("discoverer_max_depth", 3)),
         max_pages=int(scanner_cfg.get("discoverer_max_pages", 500)),
-        max_workers=min(16, int(scanner_cfg.get("discoverer_max_workers", scanner_cfg.get("max_workers", 12)))),
+        # Discover each site with a single crawl worker to reduce contention/challenge noise.
+        max_workers=1,
     )
 
     records: list[dict[str, Any]] = []
     targets = [site for site in sites if site.get("enabled") and site.get("discoverer")]
-    for site in targets:
-        result = discoverer.discover(site_name=site["name"], base_url=site["url"])
-        for url in result.product_candidates:
-            records.append(
-                {
-                    "site": site["name"],
-                    "platform": site.get("category", ""),
-                    "scan_type": "discoverer",
-                    "source_priority": "discoverer",
-                    "canonical_url": url,
-                    "source_url": url,
-                    "stock_status": "unknown",
-                    "name_raw": "",
-                    "name_en": "",
-                    "description_raw": "",
-                    "description_en": "",
-                    "cycles": [],
-                    "locations_raw": [],
-                    "locations_en": [],
-                    "price_raw": "",
-                    "evidence": ["discoverer-candidate"],
-                }
-            )
+    if targets:
+        with ThreadPoolExecutor(max_workers=min(discover_site_workers, len(targets))) as pool:
+            future_map = {
+                pool.submit(site_discoverer.discover, site_name=site["name"], base_url=site["url"]): site for site in targets
+            }
+            for future in as_completed(future_map):
+                site = future_map[future]
+                try:
+                    result = future.result()
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("discoverer failed site=%s error=%s", site.get("name", ""), exc)
+                    continue
+                for url in result.product_candidates:
+                    records.append(
+                        {
+                            "site": site["name"],
+                            "platform": site.get("category", ""),
+                            "scan_type": "discoverer",
+                            "source_priority": "discoverer",
+                            "canonical_url": url,
+                            "source_url": url,
+                            "stock_status": "unknown",
+                            "name_raw": "",
+                            "name_en": "",
+                            "description_raw": "",
+                            "description_en": "",
+                            "cycles": [],
+                            "locations_raw": [],
+                            "locations_en": [],
+                            "price_raw": "",
+                            "evidence": ["discoverer-candidate"],
+                        }
+                    )
     _save_tmp("discoverer", records)
     return records
 

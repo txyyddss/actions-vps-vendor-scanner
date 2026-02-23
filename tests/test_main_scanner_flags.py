@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import threading
+import time
 from pathlib import Path
+from types import SimpleNamespace
 
+from src.main_scanner import _discover_mode
 from src.main_scanner import _product_mode
 from src.others.state_store import StateStore
 
@@ -64,3 +68,54 @@ def test_product_mode_runs_special_crawler_when_product_scanner_enabled(monkeypa
 
     assert len(rows) == 1
     assert calls == ["ACCK"]
+
+
+def test_discover_mode_runs_sites_in_parallel_and_each_site_single_worker(monkeypatch) -> None:
+    monkeypatch.setattr("src.main_scanner._save_tmp", lambda name, payload: None)  # noqa: ARG005
+
+    lock = threading.Lock()
+    active = 0
+    max_active = 0
+    observed_max_workers: list[int] = []
+
+    class FakeDiscoverer:
+        def __init__(self, http_client, max_depth, max_pages, max_workers):  # noqa: ANN001, ARG002
+            observed_max_workers.append(max_workers)
+
+        def discover(self, site_name: str, base_url: str):  # noqa: ANN001
+            nonlocal active, max_active
+            with lock:
+                active += 1
+                max_active = max(max_active, active)
+            time.sleep(0.05)
+            with lock:
+                active -= 1
+            return SimpleNamespace(
+                site_name=site_name,
+                base_url=base_url,
+                visited_urls=[],
+                product_candidates=[f"{base_url}product"],
+                category_candidates=[],
+            )
+
+    monkeypatch.setattr("src.main_scanner.LinkDiscoverer", FakeDiscoverer)
+
+    config = {
+        "scanner": {
+            "discoverer_max_workers": 3,
+            "discoverer_max_depth": 1,
+            "discoverer_max_pages": 10,
+            "max_workers": 3,
+        }
+    }
+    sites = [
+        {"enabled": True, "discoverer": True, "name": "A", "url": "https://a.example/", "category": "WHMCS"},
+        {"enabled": True, "discoverer": True, "name": "B", "url": "https://b.example/", "category": "WHMCS"},
+        {"enabled": True, "discoverer": True, "name": "C", "url": "https://c.example/", "category": "WHMCS"},
+    ]
+
+    rows = _discover_mode(sites, config, DummyHttpClient())
+
+    assert len(rows) == 3
+    assert observed_max_workers == [1]
+    assert max_active >= 2
