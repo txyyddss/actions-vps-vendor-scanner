@@ -9,7 +9,7 @@ from bs4 import BeautifulSoup
 
 from src.misc.http_client import HttpClient
 from src.misc.logger import get_logger
-from src.misc.url_normalizer import is_same_domain, normalize_url
+from src.misc.url_normalizer import is_same_domain, normalize_url, should_skip_discovery_url
 
 
 @dataclass(slots=True)
@@ -92,8 +92,13 @@ class LinkDiscoverer:
                         continue
                     if not is_same_domain(url, root):
                         continue
+                    skip, reason = should_skip_discovery_url(url)
+                    if skip:
+                        self.logger.debug("discoverer skip url=%s reason=%s", url, reason)
+                        continue
                     visited.add(url)
-                    future_map[pool.submit(self.http_client.get, url, True, False)] = url
+                    # Discoverer should allow full fallback chain for anti-bot protected pages.
+                    future_map[pool.submit(self.http_client.get, url, True, True)] = url
 
                 for future in as_completed(future_map):
                     source_url = future_map[future]
@@ -105,7 +110,15 @@ class LinkDiscoverer:
                     if not result.ok or not result.text:
                         continue
                     extracted = self._extract_links(result.text, result.final_url)
-                    new_links = {link for link in extracted if is_same_domain(link, root)}
+                    new_links: set[str] = set()
+                    for link in extracted:
+                        if not is_same_domain(link, root):
+                            continue
+                        skip, reason = should_skip_discovery_url(link)
+                        if skip:
+                            self.logger.debug("discoverer skip extracted_url=%s reason=%s", link, reason)
+                            continue
+                        new_links.add(link)
                     next_layer.update(new_links - visited)
                     products, categories = self._split_candidates(new_links)
                     product_candidates.update(products)
@@ -129,4 +142,3 @@ class LinkDiscoverer:
             product_candidates=sorted(product_candidates),
             category_candidates=sorted(category_candidates),
         )
-

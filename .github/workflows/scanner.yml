@@ -11,6 +11,14 @@ permissions:
 jobs:
   discoverer:
     runs-on: ubuntu-latest
+    services:
+      flaresolverr:
+        image: ghcr.io/flaresolverr/flaresolverr:latest
+        ports:
+          - 8191:8191
+        env:
+          LOG_LEVEL: info
+          CAPTCHA_SOLVER: none
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -20,6 +28,22 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+      - name: Install Chromium for Playwright fallback
+        run: python -m playwright install chromium
+        continue-on-error: true
+      - name: Wait for FlareSolverr
+        run: |
+          for i in {1..20}; do
+            if curl -fsS -X POST http://127.0.0.1:8191/v1 \
+              -H "Content-Type: application/json" \
+              -d '{"cmd":"sessions.list"}' >/dev/null; then
+              echo "FlareSolverr ready"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "FlareSolverr did not become ready in time"
+          exit 1
       - name: Run discoverer
         run: python -m src.main_scanner --mode discoverer
       - name: Upload artifact
@@ -28,9 +52,30 @@ jobs:
           name: discoverer-output
           path: data/tmp/discoverer.json
           if-no-files-found: warn
+      - name: Stop FlareSolverr
+        if: always()
+        run: |
+          IDS="$(docker ps -q --filter ancestor=ghcr.io/flaresolverr/flaresolverr:latest)"
+          if [ -z "$IDS" ]; then
+            IDS="$(docker ps -q --filter ancestor=ghcr.io/flaresolverr/flaresolverr)"
+          fi
+          if [ -n "$IDS" ]; then
+            docker rm -f $IDS
+            echo "FlareSolverr stopped."
+          else
+            echo "No FlareSolverr container found."
+          fi
 
   category_scanner:
     runs-on: ubuntu-latest
+    services:
+      flaresolverr:
+        image: ghcr.io/flaresolverr/flaresolverr:latest
+        ports:
+          - 8191:8191
+        env:
+          LOG_LEVEL: info
+          CAPTCHA_SOLVER: none
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -43,6 +88,19 @@ jobs:
       - name: Install Chromium for Playwright fallback
         run: python -m playwright install chromium
         continue-on-error: true
+      - name: Wait for FlareSolverr
+        run: |
+          for i in {1..20}; do
+            if curl -fsS -X POST http://127.0.0.1:8191/v1 \
+              -H "Content-Type: application/json" \
+              -d '{"cmd":"sessions.list"}' >/dev/null; then
+              echo "FlareSolverr ready"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "FlareSolverr did not become ready in time"
+          exit 1
       - name: Run category scanner
         run: python -m src.main_scanner --mode category
       - name: Upload artifact
@@ -51,9 +109,30 @@ jobs:
           name: category-output
           path: data/tmp/category.json
           if-no-files-found: warn
+      - name: Stop FlareSolverr
+        if: always()
+        run: |
+          IDS="$(docker ps -q --filter ancestor=ghcr.io/flaresolverr/flaresolverr:latest)"
+          if [ -z "$IDS" ]; then
+            IDS="$(docker ps -q --filter ancestor=ghcr.io/flaresolverr/flaresolverr)"
+          fi
+          if [ -n "$IDS" ]; then
+            docker rm -f $IDS
+            echo "FlareSolverr stopped."
+          else
+            echo "No FlareSolverr container found."
+          fi
 
   product_scanner:
     runs-on: ubuntu-latest
+    services:
+      flaresolverr:
+        image: ghcr.io/flaresolverr/flaresolverr:latest
+        ports:
+          - 8191:8191
+        env:
+          LOG_LEVEL: info
+          CAPTCHA_SOLVER: none
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -66,6 +145,19 @@ jobs:
       - name: Install Chromium for Playwright fallback
         run: python -m playwright install chromium
         continue-on-error: true
+      - name: Wait for FlareSolverr
+        run: |
+          for i in {1..20}; do
+            if curl -fsS -X POST http://127.0.0.1:8191/v1 \
+              -H "Content-Type: application/json" \
+              -d '{"cmd":"sessions.list"}' >/dev/null; then
+              echo "FlareSolverr ready"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "FlareSolverr did not become ready in time"
+          exit 1
       - name: Run product scanner
         run: python -m src.main_scanner --mode product
       - name: Upload artifact
@@ -74,6 +166,19 @@ jobs:
           name: product-output
           path: data/tmp/product.json
           if-no-files-found: warn
+      - name: Stop FlareSolverr
+        if: always()
+        run: |
+          IDS="$(docker ps -q --filter ancestor=ghcr.io/flaresolverr/flaresolverr:latest)"
+          if [ -z "$IDS" ]; then
+            IDS="$(docker ps -q --filter ancestor=ghcr.io/flaresolverr/flaresolverr)"
+          fi
+          if [ -n "$IDS" ]; then
+            docker rm -f $IDS
+            echo "FlareSolverr stopped."
+          else
+            echo "No FlareSolverr container found."
+          fi
 
   merge_notify:
     runs-on: ubuntu-latest

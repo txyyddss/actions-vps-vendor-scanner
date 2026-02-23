@@ -48,7 +48,8 @@ def scan_hostbill_pids(
 
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         future_map = {
-            pool.submit(http_client.get, urljoin(base_url, f"index.php?/cart/&action=add&id={pid}"), True, False): pid
+            # Keep browser fallback enabled for product scans on challenge-protected sites.
+            pool.submit(http_client.get, urljoin(base_url, f"index.php?/cart/&action=add&id={pid}"), True, True): pid
             for pid in ids
         }
         for future in as_completed(future_map):
@@ -100,4 +101,3 @@ def scan_hostbill_pids(
         len(records_by_url),
     )
     return sorted(records_by_url.values(), key=lambda row: row["pid"])
-

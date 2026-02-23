@@ -8,10 +8,14 @@ INVALID_PATH_PATTERNS = (
     "/contact",
     "/contact.php",
     "/announcements",
+    "/announcement",
     "/knowledgebase",
     "/submitticket",
     "/clientarea",
     "/login",
+    "/password",
+    "/pwreset",
+    "/forgot",
     "/register",
     "/affiliates",
 )
@@ -26,6 +30,16 @@ VOLATILE_QUERY_KEYS = {
     "utm_term",
     "utm_content",
 }
+
+ENGLISH_LANGUAGE_TAGS = {
+    "en",
+    "en-us",
+    "en_us",
+    "en-gb",
+    "en_gb",
+    "english",
+}
+LANGUAGE_QUERY_KEYS = {"language", "lang", "locale"}
 
 
 @dataclass(slots=True)
@@ -49,7 +63,9 @@ def normalize_url(url: str, base_url: str | None = None, force_english: bool = F
     query_pairs = [(k, v) for k, v in parse_qsl(parsed.query, keep_blank_values=True) if k]
     query_pairs = [(k, v) for k, v in query_pairs if k.lower() not in VOLATILE_QUERY_KEYS]
 
-    if force_english and not any(k.lower() == "language" for k, _ in query_pairs):
+    if force_english:
+        # Always force a deterministic English hint and replace any existing language value.
+        query_pairs = [(k, v) for k, v in query_pairs if k.lower() != "language"]
         query_pairs.append(("language", "english"))
 
     query_pairs = sorted(query_pairs, key=lambda item: item[0].lower())
@@ -89,3 +105,26 @@ def classify_url(url: str) -> UrlClassification:
 
     return UrlClassification(url=normalized, is_invalid_product_url=False, reason="ok")
 
+
+def should_skip_discovery_url(url: str) -> tuple[bool, str]:
+    """Return whether discoverer should skip crawling this URL."""
+    normalized = normalize_url(url, force_english=False)
+    lowered = normalized.lower()
+    parsed = urlparse(lowered)
+
+    if not parsed.scheme.startswith("http"):
+        return True, "non-http-scheme"
+
+    for pattern in INVALID_PATH_PATTERNS:
+        if pattern in parsed.path:
+            return True, f"blocked-path:{pattern}"
+
+    query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
+    for key, value in query_pairs:
+        if key.lower() not in LANGUAGE_QUERY_KEYS:
+            continue
+        language_tag = value.strip().lower()
+        if language_tag and language_tag not in ENGLISH_LANGUAGE_TAGS:
+            return True, f"non-english-language:{language_tag}"
+
+    return False, "ok"

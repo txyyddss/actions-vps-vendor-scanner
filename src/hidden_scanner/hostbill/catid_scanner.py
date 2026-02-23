@@ -39,7 +39,8 @@ def scan_hostbill_catids(
 
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         future_map = {
-            pool.submit(http_client.get, urljoin(base_url, f"?cmd=cart&cat_id={cat_id}"), True, False): cat_id
+            # Keep browser fallback enabled for category scans on challenge-protected sites.
+            pool.submit(http_client.get, urljoin(base_url, f"?cmd=cart&cat_id={cat_id}"), True, True): cat_id
             for cat_id in cat_ids
         }
         for future in as_completed(future_map):
@@ -84,4 +85,3 @@ def scan_hostbill_catids(
         len(records),
     )
     return sorted(records, key=lambda row: row["cat_id"])
-

@@ -39,7 +39,8 @@ def scan_whmcs_gids(
 
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         future_map = {
-            pool.submit(http_client.get, urljoin(base_url, f"cart.php?gid={gid}"), True, False): gid for gid in gids
+            # Keep browser fallback enabled for category scans on challenge-protected sites.
+            pool.submit(http_client.get, urljoin(base_url, f"cart.php?gid={gid}"), True, True): gid for gid in gids
         }
         for future in as_completed(future_map):
             gid = future_map[future]
@@ -82,4 +83,3 @@ def scan_whmcs_gids(
         len(results),
     )
     return sorted(results, key=lambda row: row["gid"])
-

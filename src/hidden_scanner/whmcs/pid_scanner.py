@@ -48,7 +48,8 @@ def scan_whmcs_pids(
 
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         future_map = {
-            pool.submit(http_client.get, urljoin(base_url, f"cart.php?a=add&pid={pid}"), True, False): pid for pid in pids
+            # Keep browser fallback enabled for product scans on challenge-protected sites.
+            pool.submit(http_client.get, urljoin(base_url, f"cart.php?a=add&pid={pid}"), True, True): pid for pid in pids
         }
         for future in as_completed(future_map):
             pid = future_map[future]
@@ -101,4 +102,3 @@ def scan_whmcs_pids(
         len(records_by_url),
     )
     return sorted(records_by_url.values(), key=lambda row: row["pid"])
-

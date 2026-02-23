@@ -38,7 +38,8 @@ def _build_cycles(price_datas: Any) -> tuple[list[str], str]:
 def scan_acck_api(site: dict[str, Any], http_client: HttpClient) -> list[dict[str, Any]]:
     logger = get_logger("acck_api")
     now = datetime.now(timezone.utc).isoformat()
-    response = http_client.get(API_URL, force_english=False, allow_browser_fallback=False)
+    # Keep browser fallback enabled to survive anti-bot pages wrapping API responses.
+    response = http_client.get(API_URL, force_english=False, allow_browser_fallback=True)
     if not response.ok or not response.text:
         logger.warning("acck api fetch failed site=%s error=%s", site["name"], response.error)
         return []
@@ -102,4 +103,3 @@ def scan_acck_api(site: dict[str, Any], http_client: HttpClient) -> list[dict[st
                     }
                 )
     return records
-

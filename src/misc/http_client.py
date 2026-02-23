@@ -83,12 +83,32 @@ class HttpClient:
             self.default_proxy_url = str(proxy_cfg.get("url", "")).strip()
 
     @staticmethod
-    def _is_cloudflare_like(status_code: int | None, text: str) -> bool:
+    def _is_cloudflare_like(status_code: int | None, text: str, headers: dict[str, str] | None = None) -> bool:
         lower = text.lower()
-        markers = ("just a moment", "cf-chl", "cloudflare", "attention required")
-        return (status_code in {403, 503} and any(marker in lower for marker in markers)) or (
-            "challenge-platform" in lower
+        header_map = {str(k).lower(): str(v).lower() for k, v in (headers or {}).items()}
+        markers = (
+            "just a moment",
+            "attention required",
+            "cf-chl",
+            "__cf_chl",
+            "cf browser verification",
+            "cf-browser-verification",
+            "challenge-platform",
+            "cdn-cgi/challenge-platform",
+            "checking your browser before accessing",
+            "please stand by, while we are checking your browser",
+            "enable javascript and cookies to continue",
+            "ddos protection by cloudflare",
         )
+        has_marker = any(marker in lower for marker in markers)
+        has_cloudflare_headers = bool(header_map.get("cf-ray")) or "cloudflare" in header_map.get("server", "")
+        if "challenge-platform" in lower or "cdn-cgi/challenge-platform" in lower:
+            return True
+        if status_code in {403, 429, 503} and (has_marker or has_cloudflare_headers):
+            return True
+        if status_code == 200 and has_marker:
+            return True
+        return False
 
     def _direct_get(self, url: str, proxy_url: str | None = None) -> FetchResult:
         start = time.perf_counter()
@@ -168,11 +188,15 @@ class HttpClient:
             )
 
             if direct.ok and direct.status_code is not None:
+                challenge_like = self._is_cloudflare_like(direct.status_code, direct.text, direct.headers)
                 if direct.status_code == 429:
                     self.rate_limiter.apply_cooldown(normalized_url, self.ratelimit_cooldown_seconds)
-                elif not self._is_cloudflare_like(direct.status_code, direct.text) and direct.status_code < 500:
+                elif not challenge_like and direct.status_code < 500:
                     self.circuit_breaker.record_success(domain)
                     return direct
+                else:
+                    reason = "cloudflare-like-challenge" if challenge_like else f"status={direct.status_code}"
+                    self.logger.info("direct tier fallback url=%s attempt=%s reason=%s", normalized_url, attempt, reason)
 
             if self.flaresolverr_enabled:
                 fs = self.flaresolverr.get(url=normalized_url, domain=domain, proxy_url=active_proxy)
@@ -183,7 +207,7 @@ class HttpClient:
                     fs.ok,
                     fs.status_code,
                 )
-                if fs.ok and not self._is_cloudflare_like(fs.status_code, fs.body):
+                if fs.ok and not self._is_cloudflare_like(fs.status_code, fs.body, None):
                     self.circuit_breaker.record_success(domain)
                     return FetchResult(
                         ok=True,
@@ -196,6 +220,12 @@ class HttpClient:
                         elapsed_ms=0,
                     )
                 last_error = fs.error or fs.message
+                self.logger.info(
+                    "flaresolverr tier fallback url=%s attempt=%s reason=%s",
+                    normalized_url,
+                    attempt,
+                    last_error or "cloudflare-like-challenge",
+                )
 
             if allow_browser_fallback:
                 browser = self.browser.get(url=normalized_url, proxy_url=active_proxy)
@@ -239,4 +269,3 @@ class HttpClient:
             elapsed_ms=0,
             error=last_error or "fetch-failed",
         )
-
