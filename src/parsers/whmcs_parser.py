@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlparse
 
 from bs4 import BeautifulSoup
 
@@ -108,6 +108,24 @@ def _extract_links(soup: BeautifulSoup) -> tuple[list[str], list[str]]:
     return list(dict.fromkeys(product_links)), list(dict.fromkeys(category_links))
 
 
+def _store_segments_from_url(url: str) -> list[str]:
+    parsed = urlparse(url)
+    candidates = [parsed.path]
+    for key, value in parse_qsl(parsed.query, keep_blank_values=True):
+        if key.lower() == "rp":
+            candidates.append(value)
+
+    for raw in candidates:
+        lower = str(raw).lower()
+        if "/store/" not in lower:
+            continue
+        tail = lower.split("/store/", 1)[1]
+        segments = [segment for segment in tail.split("/") if segment]
+        if segments:
+            return segments
+    return []
+
+
 def parse_whmcs_page(html: str, final_url: str) -> ParsedItem:
     soup = BeautifulSoup(html, "lxml")
     full_text = soup.get_text(" ", strip=True)
@@ -119,8 +137,11 @@ def parse_whmcs_page(html: str, final_url: str) -> ParsedItem:
     in_stock: bool | None = True if confproduct else (False if has_oos_marker else None)
 
     product_links, category_links = _extract_links(soup)
-    is_product = confproduct or ("/store/" in final_lower and final_lower.count("/") >= 4)
-    is_category = bool(category_links or product_links) and not confproduct
+    store_segments = _store_segments_from_url(final_url)
+    is_store_product = len(store_segments) >= 2
+    is_store_category = len(store_segments) == 1
+    is_product = confproduct or is_store_product
+    is_category = (is_store_category or bool(category_links or product_links)) and not confproduct and not is_product
 
     name_raw = _pick_name(soup)
     description_node = soup.select_one(".product-info, #frmConfigureProduct, .message-danger, .message")
@@ -154,4 +175,3 @@ def parse_whmcs_page(html: str, final_url: str) -> ParsedItem:
         product_links=product_links,
         category_links=category_links,
     )
-

@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from urllib.parse import urljoin
+from urllib.parse import parse_qsl, urljoin, urlparse
 
 from bs4 import BeautifulSoup
 
@@ -61,14 +61,31 @@ class LinkDiscoverer:
         category_candidates: set[str] = set()
 
         for url in urls:
+            parsed = urlparse(url)
             lower = url.lower()
-            if any(token in lower for token in ("a=add&pid=", "action=add&id=", "/store/")):
-                if "/store/" in lower and lower.rstrip("/").count("/") <= 3:
-                    category_candidates.add(url)
-                else:
-                    product_candidates.add(url)
+            query = {k.lower(): v for k, v in parse_qsl(parsed.query, keep_blank_values=True)}
+
+            if "a=add&pid=" in lower or "action=add&id=" in lower:
+                product_candidates.add(url)
+
             if "gid=" in lower or "cat_id=" in lower:
                 category_candidates.add(url)
+
+            store_path = ""
+            path_lower = parsed.path.lower()
+            if "/store/" in path_lower:
+                store_path = path_lower.split("/store/", 1)[1]
+            else:
+                rp = str(query.get("rp", "")).lower()
+                if rp.startswith("/store/"):
+                    store_path = rp.split("/store/", 1)[1]
+
+            if store_path:
+                segments = [segment for segment in store_path.split("/") if segment]
+                if len(segments) >= 2:
+                    product_candidates.add(url)
+                elif len(segments) == 1:
+                    category_candidates.add(url)
         return product_candidates, category_candidates
 
     def discover(self, site_name: str, base_url: str) -> DiscoverResult:

@@ -7,6 +7,7 @@ from urllib.parse import urljoin
 from src.misc.http_client import HttpClient
 from src.misc.logger import get_logger
 from src.misc.url_normalizer import normalize_url
+from src.hidden_scanner.scan_control import AdaptiveScanController
 from src.others.state_store import StateStore
 from src.parsers.hostbill_parser import parse_hostbill_page
 
@@ -27,61 +28,85 @@ def scan_hostbill_catids(
     hard_max = int(site.get("scan_bounds", {}).get("hostbill_catid_max", defaults.get("hostbill_catid_max", 400)))
     initial_floor = int(scanner_cfg.get("initial_scan_floor", 80))
     tail_window = int(scanner_cfg.get("stop_tail_window", 60))
+    inactive_streak_limit = int(scanner_cfg.get("stop_inactive_streak", max(40, tail_window)))
     learned_high = int(site_state.get("hostbill_catid_highwater", 0))
-    scan_max = max(initial_floor, learned_high + tail_window)
-    scan_max = min(scan_max, hard_max)
-
-    cat_ids = list(range(0, scan_max + 1))
     max_workers = min(int(scanner_cfg.get("max_workers", 10)), 16)
+    batch_size = int(scanner_cfg.get("scan_batch_size", max_workers * 3))
+    planner = AdaptiveScanController(
+        hard_max=hard_max,
+        initial_floor=initial_floor,
+        tail_window=tail_window,
+        learned_high=learned_high,
+        inactive_streak_limit=inactive_streak_limit,
+    )
     records: list[dict[str, Any]] = []
     seen_urls: set[str] = set()
     discovered_ids: list[int] = []
 
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        future_map = {
-            # Keep browser fallback enabled for category scans on challenge-protected sites.
-            pool.submit(http_client.get, urljoin(base_url, f"?cmd=cart&cat_id={cat_id}"), True, True): cat_id
-            for cat_id in cat_ids
-        }
-        for future in as_completed(future_map):
-            cat_id = future_map[future]
-            response = future.result()
-            if not response.ok:
-                continue
-            parsed = parse_hostbill_page(response.text, response.final_url)
-            no_services = "no-services-yet" in parsed.evidence
-            valid = (parsed.is_category or parsed.is_product) and not no_services
-            if not valid:
-                continue
-            canonical = normalize_url(response.final_url, force_english=True)
-            if canonical in seen_urls:
-                continue
-            seen_urls.add(canonical)
-            discovered_ids.append(cat_id)
-            records.append(
-                {
-                    "site": site_name,
-                    "platform": "HostBill",
-                    "scan_type": "category_scanner",
-                    "source_priority": "category_scanner",
-                    "cat_id": cat_id,
-                    "canonical_url": canonical,
-                    "source_url": response.requested_url,
-                    "name_raw": parsed.name_raw,
-                    "name_en": parsed.name_en,
-                    "stock_status": "unknown",
-                    "evidence": parsed.evidence,
-                }
-            )
+        while True:
+            batch_ids = planner.next_batch(batch_size)
+            if not batch_ids:
+                break
+
+            future_map = {
+                # Keep browser fallback enabled for category scans on challenge-protected sites.
+                pool.submit(http_client.get, urljoin(base_url, f"?cmd=cart&cat_id={cat_id}"), True, True): cat_id
+                for cat_id in batch_ids
+            }
+            responses_by_id: dict[int, Any] = {}
+            for future in as_completed(future_map):
+                cat_id = future_map[future]
+                try:
+                    responses_by_id[cat_id] = future.result()
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("hostbill catid fetch failed site=%s cat_id=%s error=%s", site_name, cat_id, exc)
+
+            for cat_id in batch_ids:
+                response = responses_by_id.get(cat_id)
+                discovered_new = False
+                if response and response.ok:
+                    parsed = parse_hostbill_page(response.text, response.final_url)
+                    no_services = "no-services-yet" in parsed.evidence
+                    valid = (parsed.is_category or parsed.is_product) and not no_services
+                    if valid:
+                        canonical = normalize_url(response.final_url, force_english=True)
+                        if canonical not in seen_urls:
+                            seen_urls.add(canonical)
+                            discovered_ids.append(cat_id)
+                            discovered_new = True
+                            records.append(
+                                {
+                                    "site": site_name,
+                                    "platform": "HostBill",
+                                    "scan_type": "category_scanner",
+                                    "source_priority": "category_scanner",
+                                    "cat_id": cat_id,
+                                    "canonical_url": canonical,
+                                    "source_url": response.requested_url,
+                                    "name_raw": parsed.name_raw,
+                                    "name_en": parsed.name_en,
+                                    "stock_status": "unknown",
+                                    "evidence": parsed.evidence,
+                                }
+                            )
+
+                if planner.mark(cat_id, discovered_new):
+                    break
+
+            if planner.should_stop:
+                break
 
     if discovered_ids:
         state_store.update_site_state(site_name, {"hostbill_catid_highwater": max(max(discovered_ids), learned_high)})
 
     logger.info(
-        "hostbill catid scan site=%s max=%s discovered=%s unique=%s",
+        "hostbill catid scan site=%s discovered=%s unique=%s scanned_to=%s active_max=%s stop=%s",
         site_name,
-        scan_max,
         len(discovered_ids),
         len(records),
+        planner.last_processed_id,
+        planner.current_max,
+        planner.stop_reason or "hard-max-or-exhausted",
     )
     return sorted(records, key=lambda row: row["cat_id"])

@@ -41,15 +41,17 @@
   },
   "scanner": {
     "max_workers": 12,
+    "scan_batch_size": 48,
     "discoverer_max_depth": 3,
     "discoverer_max_pages": 500,
     "stop_tail_window": 60,
+    "stop_inactive_streak": 60,
     "initial_scan_floor": 80,
     "default_scan_bounds": {
-      "whmcs_gid_max": 600,
-      "whmcs_pid_max": 2000,
-      "hostbill_catid_max": 400,
-      "hostbill_pid_max": 2500
+      "whmcs_gid_max": 800,
+      "whmcs_pid_max": 3500,
+      "hostbill_catid_max": 800,
+      "hostbill_pid_max": 4000
     }
   },
   "telegram": {

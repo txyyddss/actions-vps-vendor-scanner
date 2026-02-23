@@ -3,6 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from src.discoverer.link_discoverer import LinkDiscoverer
+from src.misc.url_normalizer import normalize_url
 
 
 class FakeHttpClient:
@@ -35,6 +36,8 @@ def test_discoverer_skips_non_english_and_utility_paths() -> None:
         "https://example.com/announcements?language=norwegian",
         "https://example.com/knowledgebase",
         "https://example.com/submitticket",
+        "https://example.com/supporttickets.php?language=english",
+        normalize_url("https://example.com/index.php?currency=8&language=english&rp=%2Fannouncements%2F59%2Fx.html"),
     }
     pages = {
         "https://example.com/": """
@@ -45,6 +48,8 @@ def test_discoverer_skips_non_english_and_utility_paths() -> None:
               <a href="/contact">contact</a>
               <a href="/submitticket">ticket</a>
               <a href="/knowledgebase">kb</a>
+              <a href="/supporttickets.php?language=english">supporttickets</a>
+              <a href="/index.php?currency=8&language=english&rp=%2Fannouncements%2F59%2Fx.html">route-ann</a>
               <a href="/announcements?language=norwegian">ann</a>
               <a href="/store/vps/basic">product</a>
             </html>
@@ -63,3 +68,17 @@ def test_discoverer_skips_non_english_and_utility_paths() -> None:
         assert blocked not in called
 
     assert "https://example.com/store/vps/basic" in visited
+
+
+def test_discoverer_split_candidates_detects_store_category_and_product() -> None:
+    urls = {
+        "https://example.com/store/hkg-vps",
+        "https://example.com/store/hkg-vps/1gb-plan",
+        "https://example.com/index.php?rp=%2Fstore%2Fjp-vps",
+        "https://example.com/index.php?rp=%2Fstore%2Fjp-vps%2F2gb-plan",
+    }
+    products, categories = LinkDiscoverer._split_candidates(urls)
+    assert "https://example.com/store/hkg-vps" in categories
+    assert "https://example.com/store/hkg-vps/1gb-plan" in products
+    assert "https://example.com/index.php?rp=%2Fstore%2Fjp-vps" in categories
+    assert "https://example.com/index.php?rp=%2Fstore%2Fjp-vps%2F2gb-plan" in products

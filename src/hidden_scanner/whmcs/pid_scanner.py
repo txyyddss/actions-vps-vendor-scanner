@@ -8,6 +8,7 @@ from urllib.parse import urljoin
 from src.misc.http_client import HttpClient
 from src.misc.logger import get_logger
 from src.misc.url_normalizer import canonicalize_for_merge, normalize_url
+from src.hidden_scanner.scan_control import AdaptiveScanController
 from src.others.state_store import StateStore
 from src.parsers.whmcs_parser import parse_whmcs_page
 
@@ -37,68 +38,93 @@ def scan_whmcs_pids(
     hard_max = int(site.get("scan_bounds", {}).get("whmcs_pid_max", defaults.get("whmcs_pid_max", 2000)))
     initial_floor = int(scanner_cfg.get("initial_scan_floor", 80))
     tail_window = int(scanner_cfg.get("stop_tail_window", 60))
+    inactive_streak_limit = int(scanner_cfg.get("stop_inactive_streak", max(40, tail_window)))
     learned_high = int(site_state.get("whmcs_pid_highwater", 0))
-    scan_max = max(initial_floor, learned_high + tail_window)
-    scan_max = min(scan_max, hard_max)
-
-    pids = list(range(0, scan_max + 1))
     max_workers = min(int(scanner_cfg.get("max_workers", 10)), 16)
+    batch_size = int(scanner_cfg.get("scan_batch_size", max_workers * 3))
+    planner = AdaptiveScanController(
+        hard_max=hard_max,
+        initial_floor=initial_floor,
+        tail_window=tail_window,
+        learned_high=learned_high,
+        inactive_streak_limit=inactive_streak_limit,
+    )
     records_by_url: dict[str, dict[str, Any]] = {}
     discovered_ids: list[int] = []
 
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        future_map = {
-            # Keep browser fallback enabled for product scans on challenge-protected sites.
-            pool.submit(http_client.get, urljoin(base_url, f"cart.php?a=add&pid={pid}"), True, True): pid for pid in pids
-        }
-        for future in as_completed(future_map):
-            pid = future_map[future]
-            response = future.result()
-            if not response.ok:
-                continue
-            parsed = parse_whmcs_page(response.text, response.final_url)
-            looks_like_product = parsed.is_product or parsed.in_stock is False
-            if not looks_like_product:
-                continue
+        while True:
+            batch_ids = planner.next_batch(batch_size)
+            if not batch_ids:
+                break
 
-            canonical_url = canonicalize_for_merge(normalize_url(response.final_url, force_english=True))
-            discovered_ids.append(pid)
-
-            record = {
-                "site": site_name,
-                "platform": "WHMCS",
-                "scan_type": "product_scanner",
-                "source_priority": "product_scanner",
-                "pid": pid,
-                "canonical_url": canonical_url,
-                "source_url": response.requested_url,
-                "stock_status": _status_from_flag(parsed.in_stock),
-                "name_raw": parsed.name_raw,
-                "name_en": parsed.name_en,
-                "description_raw": parsed.description_raw,
-                "description_en": parsed.description_en,
-                "cycles": parsed.cycles,
-                "locations_raw": parsed.locations_raw,
-                "locations_en": parsed.locations_en,
-                "price_raw": parsed.price_raw,
-                "evidence": parsed.evidence + [f"tier:{response.tier}"],
-                "first_seen_at": now,
-                "last_seen_at": now,
+            future_map = {
+                # Keep browser fallback enabled for product scans on challenge-protected sites.
+                pool.submit(http_client.get, urljoin(base_url, f"cart.php?a=add&pid={pid}"), True, True): pid
+                for pid in batch_ids
             }
+            responses_by_id: dict[int, Any] = {}
+            for future in as_completed(future_map):
+                pid = future_map[future]
+                try:
+                    responses_by_id[pid] = future.result()
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("whmcs pid fetch failed site=%s pid=%s error=%s", site_name, pid, exc)
 
-            existing = records_by_url.get(canonical_url)
-            if existing is None or len(record["evidence"]) > len(existing.get("evidence", [])):
-                records_by_url[canonical_url] = record
+            for pid in batch_ids:
+                response = responses_by_id.get(pid)
+                discovered_new = False
+                if response and response.ok:
+                    parsed = parse_whmcs_page(response.text, response.final_url)
+                    looks_like_product = parsed.is_product or parsed.in_stock is False
+                    if looks_like_product:
+                        canonical_url = canonicalize_for_merge(normalize_url(response.final_url, force_english=True))
+                        record = {
+                            "site": site_name,
+                            "platform": "WHMCS",
+                            "scan_type": "product_scanner",
+                            "source_priority": "product_scanner",
+                            "pid": pid,
+                            "canonical_url": canonical_url,
+                            "source_url": response.requested_url,
+                            "stock_status": _status_from_flag(parsed.in_stock),
+                            "name_raw": parsed.name_raw,
+                            "name_en": parsed.name_en,
+                            "description_raw": parsed.description_raw,
+                            "description_en": parsed.description_en,
+                            "cycles": parsed.cycles,
+                            "locations_raw": parsed.locations_raw,
+                            "locations_en": parsed.locations_en,
+                            "price_raw": parsed.price_raw,
+                            "evidence": parsed.evidence + [f"tier:{response.tier}"],
+                            "first_seen_at": now,
+                            "last_seen_at": now,
+                        }
+                        existing = records_by_url.get(canonical_url)
+                        if existing is None:
+                            records_by_url[canonical_url] = record
+                            discovered_ids.append(pid)
+                            discovered_new = True
+                        elif len(record["evidence"]) > len(existing.get("evidence", [])):
+                            records_by_url[canonical_url] = record
+
+                if planner.mark(pid, discovered_new):
+                    break
+
+            if planner.should_stop:
+                break
 
     if discovered_ids:
         new_high = max(discovered_ids)
         state_store.update_site_state(site_name, {"whmcs_pid_highwater": max(new_high, learned_high)})
 
     logger.info(
-        "whmcs pid scan site=%s max=%s discovered=%s unique=%s",
+        "whmcs pid scan site=%s discovered=%s unique=%s scanned_to=%s active_max=%s stop=%s",
         site_name,
-        scan_max,
         len(discovered_ids),
         len(records_by_url),
+        planner.last_processed_id,
+        planner.current_max,
+        planner.stop_reason or "hard-max-or-exhausted",
     )
     return sorted(records_by_url.values(), key=lambda row: row["pid"])

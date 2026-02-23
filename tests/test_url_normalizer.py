@@ -46,9 +46,26 @@ def test_discovery_skip_blocked_auth_or_support_path() -> None:
         "/announcements",
         "/knowledgebase",
         "/submitticket",
+        "/supporttickets.php",
     ],
 )
 def test_discovery_skip_requested_blocked_paths(path: str) -> None:
     skip, reason = should_skip_discovery_url(f"https://example.com{path}")
+    assert skip is True
+    assert "blocked-path" in reason
+
+
+def test_discovery_skip_rp_announcement_route_url() -> None:
+    url = (
+        "https://my.rfchost.com/index.php?currency=8&language=english&"
+        "rp=%2Fannouncements%2F59%2FRFCHOST-%E6%97%A5%E6%9C%AC.html"
+    )
+    skip, reason = should_skip_discovery_url(url)
+    assert skip is True
+    assert "blocked-route" in reason
+
+
+def test_discovery_skip_supporttickets_url() -> None:
+    skip, reason = should_skip_discovery_url("https://my.rfchost.com/supporttickets.php?language=english")
     assert skip is True
     assert "blocked-path" in reason

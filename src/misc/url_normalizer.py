@@ -4,20 +4,23 @@ import re
 from dataclasses import dataclass
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
+# Keep these slash-free so we can match direct paths and encoded route fragments consistently.
 INVALID_PATH_PATTERNS = (
-    "/contact",
-    "/contact.php",
-    "/announcements",
-    "/announcement",
-    "/knowledgebase",
-    "/submitticket",
-    "/clientarea",
-    "/login",
-    "/password",
-    "/pwreset",
-    "/forgot",
-    "/register",
-    "/affiliates",
+    "contact",
+    "contact.php",
+    "announcements",
+    "announcement",
+    "knowledgebase",
+    "submitticket",
+    "supporttickets",
+    "supporttickets.php",
+    "clientarea",
+    "login",
+    "password",
+    "pwreset",
+    "forgot",
+    "register",
+    "affiliates",
 )
 
 VOLATILE_QUERY_KEYS = {
@@ -40,6 +43,7 @@ ENGLISH_LANGUAGE_TAGS = {
     "english",
 }
 LANGUAGE_QUERY_KEYS = {"language", "lang", "locale"}
+ROUTE_QUERY_KEYS = {"rp"}
 
 
 @dataclass(slots=True)
@@ -121,10 +125,20 @@ def should_skip_discovery_url(url: str) -> tuple[bool, str]:
 
     query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
     for key, value in query_pairs:
-        if key.lower() not in LANGUAGE_QUERY_KEYS:
+        key_lower = key.lower()
+        if key_lower in LANGUAGE_QUERY_KEYS:
+            language_tag = value.strip().lower()
+            if language_tag and language_tag not in ENGLISH_LANGUAGE_TAGS:
+                return True, f"non-english-language:{language_tag}"
             continue
-        language_tag = value.strip().lower()
-        if language_tag and language_tag not in ENGLISH_LANGUAGE_TAGS:
-            return True, f"non-english-language:{language_tag}"
+
+        # WHMCS often uses `rp=/route/...` query routes that hide actual page type.
+        if key_lower in ROUTE_QUERY_KEYS:
+            route_lower = re.sub(r"/{2,}", "/", value.strip().lower())
+            if route_lower and not route_lower.startswith("/"):
+                route_lower = f"/{route_lower}"
+            for pattern in INVALID_PATH_PATTERNS:
+                if pattern in route_lower:
+                    return True, f"blocked-route:{pattern}"
 
     return False, "ok"
