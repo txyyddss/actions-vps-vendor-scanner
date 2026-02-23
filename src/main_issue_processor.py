@@ -20,6 +20,8 @@ from src.others.state_store import StateStore
 from src.site_specific.acck_api import scan_acck_api
 from src.site_specific.akile_api import scan_akile_api
 
+TELEGRAM_CHANNEL_URL = "https://t.me/tx_stock_monitor"
+
 
 def _parse_markdown_form(body: str) -> dict[str, str]:
     fields: dict[str, str] = {}
@@ -235,7 +237,10 @@ def main() -> None:
         if not ok:
             _comment_and_maybe_close(
                 issue_number=issue_number,
-                message=f"Issue form is invalid:\n\n- {reason}\n\nClosing as not planned.",
+                message=(
+                    f"Issue form is invalid:\n\n- {reason}\n\n"
+                    f"Closing as not planned.\n\nTelegram channel: {TELEGRAM_CHANNEL_URL}"
+                ),
                 close_invalid=True,
             )
             telegram.send_run_stats("Issue Processor", {"issue": issue_number, "status": "invalid", "reason": reason})
@@ -254,7 +259,8 @@ def main() -> None:
                     f"- Expected Product Number: {expected}\n"
                     f"- Scanned Product Number: {scanned_count}\n"
                     f"- Validation Method: {method}\n\n"
-                    "The site was **not** added/updated. Please verify URL/platform/expectation and submit again."
+                    "The site was **not** added/updated. Please verify URL/platform/expectation and submit again.\n\n"
+                    f"Telegram channel: {TELEGRAM_CHANNEL_URL}"
                 )
                 _comment_and_maybe_close(issue_number=issue_number, message=rejection, close_invalid=False)
                 telegram.send_run_stats(
@@ -273,7 +279,10 @@ def main() -> None:
         if not changed:
             _comment_and_maybe_close(
                 issue_number=issue_number,
-                message=f"Unable to process request:\n\n- {message}\n\nClosing as not planned.",
+                message=(
+                    f"Unable to process request:\n\n- {message}\n\n"
+                    f"Closing as not planned.\n\nTelegram channel: {TELEGRAM_CHANNEL_URL}"
+                ),
                 close_invalid=True,
             )
             telegram.send_run_stats("Issue Processor", {"issue": issue_number, "status": "rejected", "reason": message})
@@ -281,7 +290,10 @@ def main() -> None:
 
         _comment_and_maybe_close(
             issue_number=issue_number,
-            message=f"Processed automatically:\n\n- {message}\n\nPlease verify the next scanner run.",
+            message=(
+                f"Processed automatically:\n\n- {message}\n\n"
+                f"Please verify the next scanner run.\n\nTelegram channel: {TELEGRAM_CHANNEL_URL}"
+            ),
             close_invalid=False,
         )
         telegram.send_run_stats("Issue Processor", {"issue": issue_number, "status": "applied", "message": message})

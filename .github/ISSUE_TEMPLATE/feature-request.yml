@@ -8,6 +8,8 @@ body:
       value: |
         Describe the user outcome first, then implementation ideas.
 
+        Telegram channel: https://t.me/tx_stock_monitor
+
   - type: textarea
     id: problem
     attributes:

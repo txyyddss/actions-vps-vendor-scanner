@@ -13,6 +13,8 @@ body:
         - workflow/job name
         - expected behavior vs actual behavior
 
+        Telegram channel: https://t.me/tx_stock_monitor
+
   - type: textarea
     id: summary
     attributes:

@@ -63,7 +63,9 @@ GitHub repository secrets required for Telegram:
 
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_CHAT_ID`
-- `TELEGRAM_TOPIC_ID` (optional)
+- `TELEGRAM_TOPIC_ID` (optional, only for forum-style groups; leave unset for channels)
+
+Telegram channel: https://t.me/tx_stock_monitor
 
 Run tests:
 

@@ -16,6 +16,7 @@ body:
         Tips:
         - Use the exact vendor portal URL (include protocol).
         - For SPECIAL sites, set `special_crawler` (for example: `acck_api`, `akile_api`).
+        - Monitor updates: https://t.me/tx_stock_monitor
 
   - type: dropdown
     id: action

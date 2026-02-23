@@ -25,6 +25,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <p>Live VPS inventory from WHMCS, HostBill, and API-driven vendors.</p>
       </div>
       <div class="hero-actions">
+        <a class="hero-link" href="https://t.me/tx_stock_monitor" target="_blank" rel="noopener">Telegram Channel</a>
         <button id="theme-toggle">Toggle Theme</button>
       </div>
     </header>
@@ -47,6 +48,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     </section>
     <footer>
       <small id="last-updated"></small>
+      <small><a class="footer-link" href="https://t.me/tx_stock_monitor" target="_blank" rel="noopener">https://t.me/tx_stock_monitor</a></small>
     </footer>
   </main>
   <script>window.__DASHBOARD_DATA__ = __DATA__;</script>
@@ -108,6 +110,11 @@ body {
 }
 .hero h1 { margin: 0 0 0.4rem; font-size: clamp(1.3rem, 3vw, 2rem); }
 .hero p { margin: 0; color: var(--muted); }
+.hero-actions {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+}
 button {
   border: 1px solid var(--line);
   background: transparent;
@@ -115,6 +122,13 @@ button {
   padding: 0.6rem 0.9rem;
   border-radius: 10px;
   cursor: pointer;
+}
+.hero-link {
+  border: 1px solid color-mix(in srgb, var(--accent), transparent 65%);
+  color: var(--accent);
+  text-decoration: none;
+  padding: 0.6rem 0.9rem;
+  border-radius: 10px;
 }
 .stats {
   display: grid;
@@ -164,10 +178,25 @@ th { color: var(--muted); cursor: pointer; user-select: none; }
   padding: 0.35rem 0.6rem;
   border-radius: 8px;
 }
-footer { margin-top: 1rem; color: var(--muted); }
+footer {
+  margin-top: 1rem;
+  color: var(--muted);
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+.footer-link {
+  color: var(--accent);
+  text-decoration: none;
+}
 @media (max-width: 760px) {
   th:nth-child(3), td:nth-child(3),
   th:nth-child(6), td:nth-child(6) { display: none; }
+  .hero-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
 }
 """
 
@@ -270,4 +299,3 @@ def generate_dashboard(products_payload: dict[str, Any], output_dir: str = "web"
     (assets / "style.css").write_text(CSS_TEMPLATE, encoding="utf-8")
     (assets / "app.js").write_text(APP_JS_TEMPLATE, encoding="utf-8")
     logger.info("dashboard generated path=%s products=%s", out / "index.html", len(products))
-

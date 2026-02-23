@@ -29,6 +29,14 @@ class TelegramConfig:
     tone: str = "professional"
 
 
+def _normalize_topic_id(value: str) -> str | None:
+    raw = (value or "").strip()
+    # Telegram message_thread_id is an integer and only needed for forum-style groups.
+    if raw.isdigit() and int(raw) > 0:
+        return raw
+    return None
+
+
 class TelegramSender:
     def __init__(self, cfg: dict[str, Any]) -> None:
         env_bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
@@ -38,7 +46,7 @@ class TelegramSender:
         configured_enabled = bool(cfg.get("enabled", False))
         bot_token = env_bot_token or str(cfg.get("bot_token", "")).strip()
         chat_id = env_chat_id or str(cfg.get("chat_id", "")).strip()
-        topic_id = env_topic_id or str(cfg.get("topic_id", "")).strip()
+        topic_id = _normalize_topic_id(env_topic_id or str(cfg.get("topic_id", "")))
         enabled = configured_enabled and bool(bot_token and chat_id)
 
         self.config = TelegramConfig(
@@ -138,4 +146,3 @@ class TelegramSender:
             ]
         )
         return self._send("\n".join(lines))
-
