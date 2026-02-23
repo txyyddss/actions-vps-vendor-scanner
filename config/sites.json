@@ -1,0 +1,237 @@
+﻿{
+  "sites": {
+    "site": [
+      {
+        "enabled": true,
+        "name": "RFCHOST",
+        "url": "https://my.rfchost.com/",
+        "discoverer": true,
+        "category": "WHMCS",
+        "special_crawler": "",
+        "product_scanner": true,
+        "category_scanner": true,
+        "scan_bounds": {}
+      },
+      {
+        "enabled": true,
+        "name": "VMISS",
+        "url": "https://app.vmiss.com/",
+        "discoverer": true,
+        "category": "WHMCS",
+        "special_crawler": "",
+        "product_scanner": true,
+        "category_scanner": true,
+        "scan_bounds": {}
+      },
+      {
+        "enabled": true,
+        "name": "ACCK",
+        "url": "https://acck.io/",
+        "discoverer": false,
+        "category": "SPECIAL",
+        "special_crawler": "acck_api",
+        "product_scanner": false,
+        "category_scanner": false,
+        "scan_bounds": {}
+      },
+      {
+        "enabled": true,
+        "name": "PortChannel Zero",
+        "url": "https://console.po0.com/",
+        "discoverer": true,
+        "category": "WHMCS",
+        "special_crawler": "",
+        "product_scanner": false,
+        "category_scanner": false,
+        "scan_bounds": {}
+      },
+      {
+        "enabled": true,
+        "name": "Akile",
+        "url": "https://akile.io/",
+        "discoverer": false,
+        "category": "SPECIAL",
+        "special_crawler": "akile_api",
+        "product_scanner": false,
+        "category_scanner": false,
+        "scan_bounds": {}
+      },
+      {
+        "enabled": true,
+        "name": "GreenCloud",
+        "url": "https://greencloudvps.com/",
+        "discoverer": true,
+        "category": "WHMCS",
+        "special_crawler": "",
+        "product_scanner": false,
+        "category_scanner": false,
+        "scan_bounds": {}
+      },
+      {
+        "enabled": true,
+        "name": "Kaze Network Limited",
+        "url": "https://app.kaze.network/",
+        "discoverer": true,
+        "category": "WHMCS",
+        "special_crawler": "",
+        "product_scanner": true,
+        "category_scanner": true,
+        "scan_bounds": {}
+      },
+      {
+        "enabled": true,
+        "name": "NMCloud",
+        "url": "https://nmcloud.cc/",
+        "discoverer": true,
+        "category": "WHMCS",
+        "special_crawler": "",
+        "product_scanner": true,
+        "category_scanner": true,
+        "scan_bounds": {}
+      },
+      {
+        "enabled": true,
+        "name": "Frantech",
+        "url": "https://my.frantech.ca/",
+        "discoverer": true,
+        "category": "WHMCS",
+        "special_crawler": "",
+        "product_scanner": false,
+        "category_scanner": true,
+        "scan_bounds": {}
+      },
+      {
+        "enabled": true,
+        "name": "Backwaves",
+        "url": "https://backwaves.net/",
+        "discoverer": true,
+        "category": "WHMCS",
+        "special_crawler": "",
+        "product_scanner": true,
+        "category_scanner": true,
+        "scan_bounds": {}
+      },
+      {
+        "enabled": true,
+        "name": "GGVision",
+        "url": "https://cloud.ggvision.net/",
+        "discoverer": true,
+        "category": "WHMCS",
+        "special_crawler": "",
+        "product_scanner": false,
+        "category_scanner": false,
+        "scan_bounds": {}
+      },
+      {
+        "enabled": true,
+        "name": "WAP.ac",
+        "url": "https://wap.ac/",
+        "discoverer": true,
+        "category": "WHMCS",
+        "special_crawler": "",
+        "product_scanner": true,
+        "category_scanner": true,
+        "scan_bounds": {}
+      },
+      {
+        "enabled": true,
+        "name": "BageVM",
+        "url": "https://www.bagevm.com/",
+        "discoverer": true,
+        "category": "WHMCS",
+        "special_crawler": "",
+        "product_scanner": true,
+        "category_scanner": true,
+        "scan_bounds": {}
+      },
+      {
+        "enabled": true,
+        "name": "ColoCrossing",
+        "url": "https://cloud.colocrossing.com/",
+        "discoverer": true,
+        "category": "WHMCS",
+        "special_crawler": "",
+        "product_scanner": false,
+        "category_scanner": true,
+        "scan_bounds": {}
+      },
+      {
+        "enabled": true,
+        "name": "DMIT",
+        "url": "https://www.dmit.io/",
+        "discoverer": true,
+        "category": "WHMCS",
+        "special_crawler": "",
+        "product_scanner": false,
+        "category_scanner": true,
+        "scan_bounds": {}
+      },
+      {
+        "enabled": true,
+        "name": "ZgoVPS",
+        "url": "https://clients.zgovps.com/",
+        "discoverer": true,
+        "category": "HostBill",
+        "special_crawler": "",
+        "product_scanner": true,
+        "category_scanner": true,
+        "scan_bounds": {}
+      },
+      {
+        "enabled": true,
+        "name": "RackNerd",
+        "url": "https://my.racknerd.com/",
+        "discoverer": true,
+        "category": "WHMCS",
+        "special_crawler": "",
+        "product_scanner": false,
+        "category_scanner": false,
+        "scan_bounds": {}
+      },
+      {
+        "enabled": true,
+        "name": "GigsGigsCloud",
+        "url": "https://clientarea.gigsgigscloud.com/",
+        "discoverer": true,
+        "category": "HostBill",
+        "special_crawler": "",
+        "product_scanner": true,
+        "category_scanner": true,
+        "scan_bounds": {}
+      },
+      {
+        "enabled": true,
+        "name": "Boil Network",
+        "url": "https://cloud.boil.network/",
+        "discoverer": true,
+        "category": "WHMCS",
+        "special_crawler": "",
+        "product_scanner": true,
+        "category_scanner": true,
+        "scan_bounds": {}
+      },
+      {
+        "enabled": true,
+        "name": "BFFYun",
+        "url": "https://cloud.bffyun.com/",
+        "discoverer": true,
+        "category": "WHMCS",
+        "special_crawler": "",
+        "product_scanner": true,
+        "category_scanner": true,
+        "scan_bounds": {}
+      },
+      {
+        "enabled": true,
+        "name": "BestVM",
+        "url": "https://bestvm.cloud/",
+        "discoverer": true,
+        "category": "WHMCS",
+        "special_crawler": "",
+        "product_scanner": true,
+        "category_scanner": true,
+        "scan_bounds": {}
+      }
+    ]
+  }
+}

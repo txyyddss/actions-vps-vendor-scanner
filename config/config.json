@@ -1,0 +1,72 @@
+﻿{
+  "http": {
+    "timeout_seconds": 35,
+    "follow_redirects": true,
+    "verify_ssl": true,
+    "http2": true,
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+    "accept_language": "en-US,en;q=0.9"
+  },
+  "retry": {
+    "max_attempts": 3,
+    "base_delay_seconds": 1.5,
+    "max_delay_seconds": 30,
+    "jitter_seconds": 0.5,
+    "retry_status_codes": [429, 500, 502, 503, 504]
+  },
+  "rate_limit": {
+    "global_qps": 4,
+    "per_domain_qps": 1,
+    "default_cooldown_seconds": 45,
+    "ratelimit_cooldown_seconds": 90,
+    "circuit_breaker_failures": 5,
+    "circuit_breaker_cooldown_seconds": 180
+  },
+  "flaresolverr": {
+    "enabled": true,
+    "url": "http://127.0.0.1:8191/v1",
+    "max_timeout_ms": 180000,
+    "session_ttl_minutes": 30
+  },
+  "playwright": {
+    "enabled": true,
+    "headless": true,
+    "timeout_ms": 60000,
+    "wait_until": "networkidle"
+  },
+  "proxy": {
+    "enabled": false,
+    "url": "",
+    "allow_flaresolverr_proxy": true
+  },
+  "scanner": {
+    "max_workers": 12,
+    "discoverer_max_depth": 3,
+    "discoverer_max_pages": 500,
+    "stop_tail_window": 60,
+    "initial_scan_floor": 80,
+    "default_scan_bounds": {
+      "whmcs_gid_max": 600,
+      "whmcs_pid_max": 2000,
+      "hostbill_catid_max": 400,
+      "hostbill_pid_max": 2500
+    }
+  },
+  "telegram": {
+    "enabled": false,
+    "bot_token": "",
+    "chat_id": "",
+    "topic_id": "",
+    "tone": "professional"
+  },
+  "dashboard": {
+    "title": "Aggregate Buying Dashboard",
+    "default_theme": "dark",
+    "show_stats": true
+  },
+  "logging": {
+    "level": "INFO",
+    "json_logs": false,
+    "verbose_http": true
+  }
+}

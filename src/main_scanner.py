@@ -1,0 +1,221 @@
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from src.discoverer.link_discoverer import LinkDiscoverer
+from src.hidden_scanner.hostbill.catid_scanner import scan_hostbill_catids
+from src.hidden_scanner.hostbill.pid_scanner import scan_hostbill_pids
+from src.hidden_scanner.whmcs.gid_scanner import scan_whmcs_gids
+from src.hidden_scanner.whmcs.pid_scanner import scan_whmcs_pids
+from src.misc.config_loader import dump_json, load_config, load_sites
+from src.misc.dashboard_generator import generate_dashboard
+from src.misc.http_client import HttpClient
+from src.misc.logger import setup_logging
+from src.misc.telegram_sender import TelegramSender
+from src.others.data_merge import diff_products, load_products, merge_records, write_products
+from src.others.state_store import StateStore
+from src.site_specific.acck_api import scan_acck_api
+from src.site_specific.akile_api import scan_akile_api
+
+TMP_DIR = Path("data/tmp")
+
+
+def _now_run_id() -> str:
+    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+
+def _load_tmp(name: str) -> list[dict[str, Any]]:
+    path = TMP_DIR / f"{name}.json"
+    if not path.exists():
+        return []
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _save_tmp(name: str, payload: list[dict[str, Any]]) -> None:
+    TMP_DIR.mkdir(parents=True, exist_ok=True)
+    (TMP_DIR / f"{name}.json").write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def _discover_mode(sites: list[dict[str, Any]], config: dict[str, Any], http_client: HttpClient) -> list[dict[str, Any]]:
+    scanner_cfg = config.get("scanner", {})
+    discoverer = LinkDiscoverer(
+        http_client=http_client,
+        max_depth=int(scanner_cfg.get("discoverer_max_depth", 3)),
+        max_pages=int(scanner_cfg.get("discoverer_max_pages", 500)),
+        max_workers=min(8, int(scanner_cfg.get("max_workers", 12))),
+    )
+
+    records: list[dict[str, Any]] = []
+    targets = [site for site in sites if site.get("enabled") and site.get("discoverer")]
+    for site in targets:
+        result = discoverer.discover(site_name=site["name"], base_url=site["url"])
+        for url in result.product_candidates:
+            records.append(
+                {
+                    "site": site["name"],
+                    "platform": site.get("category", ""),
+                    "scan_type": "discoverer",
+                    "source_priority": "discoverer",
+                    "canonical_url": url,
+                    "source_url": url,
+                    "stock_status": "unknown",
+                    "name_raw": "",
+                    "name_en": "",
+                    "description_raw": "",
+                    "description_en": "",
+                    "cycles": [],
+                    "locations_raw": [],
+                    "locations_en": [],
+                    "price_raw": "",
+                    "evidence": ["discoverer-candidate"],
+                }
+            )
+    _save_tmp("discoverer", records)
+    return records
+
+
+def _category_mode(
+    sites: list[dict[str, Any]],
+    config: dict[str, Any],
+    http_client: HttpClient,
+    state_store: StateStore,
+) -> list[dict[str, Any]]:
+    scanner_cfg = config.get("scanner", {})
+    targets = [site for site in sites if site.get("enabled") and site.get("category_scanner")]
+    rows: list[dict[str, Any]] = []
+
+    with ThreadPoolExecutor(max_workers=min(8, int(scanner_cfg.get("max_workers", 12)))) as pool:
+        future_map = {}
+        for site in targets:
+            category = str(site.get("category", "")).lower()
+            if category == "whmcs":
+                future_map[pool.submit(scan_whmcs_gids, site, config, http_client, state_store)] = site["name"]
+            elif category == "hostbill":
+                future_map[pool.submit(scan_hostbill_catids, site, config, http_client, state_store)] = site["name"]
+        for future in as_completed(future_map):
+            rows.extend(future.result())
+
+    _save_tmp("category", rows)
+    return rows
+
+
+def _product_mode(
+    sites: list[dict[str, Any]],
+    config: dict[str, Any],
+    http_client: HttpClient,
+    state_store: StateStore,
+) -> list[dict[str, Any]]:
+    scanner_cfg = config.get("scanner", {})
+    targets = [site for site in sites if site.get("enabled")]
+    rows: list[dict[str, Any]] = []
+
+    with ThreadPoolExecutor(max_workers=min(8, int(scanner_cfg.get("max_workers", 12)))) as pool:
+        future_map = {}
+        for site in targets:
+            special_crawler = str(site.get("special_crawler", "")).strip().lower()
+            category = str(site.get("category", "")).lower()
+            if special_crawler == "acck_api":
+                future_map[pool.submit(scan_acck_api, site, http_client)] = site["name"]
+            elif special_crawler == "akile_api":
+                future_map[pool.submit(scan_akile_api, site, http_client)] = site["name"]
+            elif site.get("product_scanner"):
+                if category == "whmcs":
+                    future_map[pool.submit(scan_whmcs_pids, site, config, http_client, state_store)] = site["name"]
+                elif category == "hostbill":
+                    future_map[pool.submit(scan_hostbill_pids, site, config, http_client, state_store)] = site["name"]
+
+        for future in as_completed(future_map):
+            rows.extend(future.result())
+
+    _save_tmp("product", rows)
+    return rows
+
+
+def _attach_product_ids(products: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    for item in products:
+        key = item.get("canonical_url", "")
+        item["product_id"] = hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
+    return products
+
+
+def _merge_mode(config: dict[str, Any]) -> list[dict[str, Any]]:
+    discoverer_rows = _load_tmp("discoverer")
+    category_rows = _load_tmp("category")
+    product_rows = _load_tmp("product")
+
+    old_products = load_products("data/products.json")
+    merged = merge_records(discoverer_rows, product_rows, category_rows, previous_products=old_products)
+    merged = _attach_product_ids(merged)
+
+    added, deleted, changed_stock = diff_products(old_products, merged)
+    run_id = _now_run_id()
+
+    tg = TelegramSender(config.get("telegram", {}))
+    if added or deleted:
+        tg.send_product_changes(new_urls=added, deleted_urls=deleted)
+    tg.send_run_stats(
+        title="Scanner Run Summary",
+        stats={
+            "run_id": run_id,
+            "merged_products": len(merged),
+            "new_products": len(added),
+            "deleted_products": len(deleted),
+            "stock_changed": len(changed_stock),
+        },
+    )
+
+    write_products(merged, run_id=run_id, path="data/products.json")
+    products_payload = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "stats": {
+            "total_products": len(merged),
+            "in_stock": sum(1 for item in merged if item.get("stock_status") == "in_stock"),
+            "out_of_stock": sum(1 for item in merged if item.get("stock_status") == "out_of_stock"),
+        },
+        "products": merged,
+    }
+    generate_dashboard(products_payload, output_dir="web")
+    return merged
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="VPS scanner orchestrator")
+    parser.add_argument("--mode", required=True, choices=["discoverer", "category", "product", "merge", "all"])
+    parser.add_argument("--site", default="", help="optional site name filter")
+    args = parser.parse_args()
+
+    config = load_config("config/config.json")
+    setup_logging(
+        level=str(config.get("logging", {}).get("level", "INFO")),
+        json_logs=bool(config.get("logging", {}).get("json_logs", False)),
+    )
+    sites = load_sites("config/sites.json")
+    if args.site:
+        sites = [site for site in sites if site.get("name", "").lower() == args.site.lower()]
+    http_client = HttpClient(config=config)
+    state_store = StateStore(Path("data/state.json"))
+
+    if args.mode == "discoverer":
+        _discover_mode(sites, config, http_client)
+    elif args.mode == "category":
+        _category_mode(sites, config, http_client, state_store)
+    elif args.mode == "product":
+        _product_mode(sites, config, http_client, state_store)
+    elif args.mode == "merge":
+        _merge_mode(config)
+    else:
+        _discover_mode(sites, config, http_client)
+        _category_mode(sites, config, http_client, state_store)
+        _product_mode(sites, config, http_client, state_store)
+        _merge_mode(config)
+
+
+if __name__ == "__main__":
+    main()
+

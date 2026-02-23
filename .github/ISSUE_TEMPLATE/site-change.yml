@@ -1,0 +1,82 @@
+﻿name: Site Change Request
+description: Add, edit, or delete a monitored site from config/sites.json
+title: "[Site Change] <action> <site-name>"
+labels: [site-change]
+body:
+  - type: dropdown
+    id: action
+    attributes:
+      label: Action
+      options:
+        - add
+        - edit
+        - delete
+    validations:
+      required: true
+  - type: input
+    id: site_name
+    attributes:
+      label: Site Name
+      placeholder: ExampleHost
+    validations:
+      required: true
+  - type: input
+    id: base_url
+    attributes:
+      label: Base URL
+      placeholder: https://example.com/
+      description: Must include protocol.
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - WHMCS
+        - HostBill
+        - SPECIAL
+    validations:
+      required: true
+  - type: dropdown
+    id: discoverer
+    attributes:
+      label: Enable discoverer
+      options:
+        - "true"
+        - "false"
+    validations:
+      required: true
+  - type: dropdown
+    id: product_scanner
+    attributes:
+      label: Enable product scanner
+      options:
+        - "true"
+        - "false"
+    validations:
+      required: true
+  - type: dropdown
+    id: category_scanner
+    attributes:
+      label: Enable category scanner
+      options:
+        - "true"
+        - "false"
+    validations:
+      required: true
+  - type: input
+    id: special_crawler
+    attributes:
+      label: Special crawler
+      description: Optional, e.g. acck_api or akile_api
+      placeholder: ""
+    validations:
+      required: false
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Optional extra context.
+    validations:
+      required: false

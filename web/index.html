@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aggregate Buying Dashboard</title>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-theme="dark">
+  <div class="grid-bg"></div>
+  <main class="page">
+    <header class="hero">
+      <div>
+        <h1>Aggregate Buying Dashboard</h1>
+        <p>Live VPS inventory from WHMCS, HostBill, and API-driven vendors.</p>
+      </div>
+      <div class="hero-actions">
+        <button id="theme-toggle">Toggle Theme</button>
+      </div>
+    </header>
+    <section class="stats" id="stats"></section>
+    <section class="table-wrap">
+      <table id="products-table">
+        <thead>
+          <tr>
+            <th data-sort="site">Site</th>
+            <th data-sort="name">Product</th>
+            <th data-sort="platform">Platform</th>
+            <th data-sort="status">Status</th>
+            <th data-sort="price">Price</th>
+            <th data-sort="updated">Updated</th>
+            <th>Buy</th>
+          </tr>
+        </thead>
+        <tbody id="products-body"></tbody>
+      </table>
+    </section>
+    <footer>
+      <small id="last-updated"></small>
+    </footer>
+  </main>
+  <script>window.__DASHBOARD_DATA__ = {"generated_at": "2026-02-23T16:01:39.532229+00:00", "stats": {"total_products": 0, "in_stock": 0, "out_of_stock": 0, "total_sites": 0}, "products": []};</script>
+  <script src="assets/app.js"></script>
+</body>
+</html>

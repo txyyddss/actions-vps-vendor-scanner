@@ -1,0 +1,26 @@
+﻿name: Bug Report
+description: Report a bug in crawler, stock checker, or workflows
+title: "[Bug] <short description>"
+labels: [bug]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What is failing?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to Reproduce
+      description: Include URLs, commands, and expected vs actual result.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / Evidence
+      description: Paste relevant logs or screenshots.
+    validations:
+      required: false
