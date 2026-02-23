@@ -1,4 +1,4 @@
-﻿{
+{
   "http": {
     "timeout_seconds": 35,
     "follow_redirects": true,

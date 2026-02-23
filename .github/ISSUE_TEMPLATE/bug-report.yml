@@ -1,4 +1,4 @@
-﻿name: Bug Report
+name: Bug Report
 description: Report a bug in crawler, stock checker, or workflows
 title: "[Bug] <short description>"
 labels: [bug]

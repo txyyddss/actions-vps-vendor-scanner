@@ -1,4 +1,4 @@
-﻿name: pr-processor
+name: pr-processor
 
 on:
   pull_request:

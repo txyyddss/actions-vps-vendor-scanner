@@ -1,4 +1,4 @@
-﻿# Module Guide
+# Module Guide
 
 ## Discoverer
 - `src/discoverer/link_discoverer.py`

@@ -1,4 +1,4 @@
-﻿# Testing
+# Testing
 
 Run all tests:
 

@@ -1,4 +1,4 @@
-﻿name: Site Change Request
+name: Site Change Request
 description: Add, edit, or delete a monitored site from config/sites.json
 title: "[Site Change] <action> <site-name>"
 labels: [site-change]

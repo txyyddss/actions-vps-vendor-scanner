@@ -1,4 +1,4 @@
-﻿name: issue-processor
+name: issue-processor
 
 on:
   issues:

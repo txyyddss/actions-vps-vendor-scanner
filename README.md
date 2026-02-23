@@ -1,4 +1,4 @@
-﻿# actions-vps-vendor-scanner
+# actions-vps-vendor-scanner
 
 GitHub Actions powered product scanner and stock monitor for WHMCS, HostBill, and special API vendors.
 

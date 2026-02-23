@@ -1,4 +1,4 @@
-﻿name: stock-alert
+name: stock-alert
 
 on:
   schedule:

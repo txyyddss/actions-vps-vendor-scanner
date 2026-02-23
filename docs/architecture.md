@@ -1,4 +1,4 @@
-﻿# Architecture
+# Architecture
 
 This project monitors VPS products and stock status using a multi-stage scanner pipeline.
 
