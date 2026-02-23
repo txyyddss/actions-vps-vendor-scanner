@@ -1,26 +1,51 @@
 name: Bug Report
-description: Report a bug in crawler, stock checker, or workflows
+description: Report a bug in crawler, stock checker, issue processor, or workflows
 title: "[Bug] <short description>"
 labels: [bug]
 body:
+  - type: markdown
+    attributes:
+      value: |
+        Provide enough detail so the bug can be reproduced quickly.
+
+        Include:
+        - target URL(s)
+        - workflow/job name
+        - expected behavior vs actual behavior
+
   - type: textarea
     id: summary
     attributes:
       label: Summary
       description: What is failing?
+      placeholder: Scanner marks in-stock product as out-of-stock for site X.
     validations:
       required: true
+
   - type: textarea
     id: repro
     attributes:
       label: Steps to Reproduce
-      description: Include URLs, commands, and expected vs actual result.
+      description: Include command/workflow trigger and exact steps.
+      placeholder: |
+        1. Run scanner workflow manually
+        2. Check job `product_scanner`
+        3. Observe incorrect stock result in data/products.json
     validations:
       required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What should happen instead?
+    validations:
+      required: true
+
   - type: textarea
     id: logs
     attributes:
       label: Logs / Evidence
-      description: Paste relevant logs or screenshots.
+      description: Paste relevant logs, screenshots, or sample output snippets.
     validations:
       required: false

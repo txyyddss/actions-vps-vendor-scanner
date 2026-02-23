@@ -37,23 +37,11 @@ jobs:
           script: |
             const outcome = "${{ needs.tests.outputs.outcome }}";
             const body = outcome === "success"
-              ? "✅ CI tests passed. PR is suitable for automatic approval policy."
-              : "❌ CI tests failed. Please review workflow logs.";
+              ? "CI tests passed. This PR looks valid based on automated checks."
+              : "CI tests failed. Please review workflow logs.";
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
               body,
             });
-
-  auto_approve:
-    runs-on: ubuntu-latest
-    needs: tests
-    if: needs.tests.outputs.outcome == 'success'
-    permissions:
-      pull-requests: write
-    steps:
-      - name: Auto approve PR
-        uses: hmarr/auto-approve-action@v4
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}

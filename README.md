@@ -12,7 +12,7 @@ GitHub Actions powered product scanner and stock monitor for WHMCS, HostBill, an
 - Telegram alerts for product diff and restocks
 - Static cyberpunk dashboard generation (`web/`)
 - Automatic issue form processing for site add/edit/delete
-- Pull request processor with tests, comment, and auto-approve on green checks
+- Pull request processor with tests and validation comment (no auto-approval)
 
 ## Quick start
 
@@ -59,6 +59,12 @@ Run issue processor locally (with event payload env):
 python -m src.main_issue_processor --issue-number 123
 ```
 
+GitHub repository secrets required for Telegram:
+
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_CHAT_ID`
+- `TELEGRAM_TOPIC_ID` (optional)
+
 Run tests:
 
 ```bash
@@ -84,3 +90,4 @@ pytest
 - Scanner keeps both raw and English-normalized fields.
 - URLs are normalized and washed before persistence.
 - Playwright fallback is lazy and only used when needed.
+- Site add/edit issue requests require `Expected Product Number`; processor runs a live scan and rejects the request if scanned products are below that threshold.

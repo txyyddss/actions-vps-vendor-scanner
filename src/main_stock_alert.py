@@ -19,11 +19,23 @@ def main() -> None:
 
     products_path = Path("data/products.json")
     if not products_path.exists():
+        write_stock(items=[], run_id="stock-run", path="data/stock.json")
         return
 
-    products_payload = json.loads(products_path.read_text(encoding="utf-8"))
+    products_payload = json.loads(products_path.read_text(encoding="utf-8-sig"))
     products = list(products_payload.get("products", []))
     if not products:
+        run_id = products_payload.get("run_id") or "stock-run"
+        tg = TelegramSender(config.get("telegram", {}))
+        tg.send_run_stats(
+            title="Stock Alert Run Summary",
+            stats={
+                "total_checked": 0,
+                "restocked": 0,
+                "changed": 0,
+            },
+        )
+        write_stock(items=[], run_id=run_id, path="data/stock.json")
         return
 
     http_client = HttpClient(config=config)
@@ -54,4 +66,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Any
 
@@ -9,7 +10,7 @@ from src.misc.logger import get_logger
 
 
 def _escape(text: str) -> str:
-    # Conservative escaping for Telegram Markdown.
+    # Conservative escaping for Telegram Markdown mode.
     return (
         text.replace("\\", "\\\\")
         .replace("_", "\\_")
@@ -30,14 +31,27 @@ class TelegramConfig:
 
 class TelegramSender:
     def __init__(self, cfg: dict[str, Any]) -> None:
+        env_bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+        env_chat_id = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+        env_topic_id = os.getenv("TELEGRAM_TOPIC_ID", "").strip()
+
+        configured_enabled = bool(cfg.get("enabled", False))
+        bot_token = env_bot_token or str(cfg.get("bot_token", "")).strip()
+        chat_id = env_chat_id or str(cfg.get("chat_id", "")).strip()
+        topic_id = env_topic_id or str(cfg.get("topic_id", "")).strip()
+        enabled = configured_enabled and bool(bot_token and chat_id)
+
         self.config = TelegramConfig(
-            enabled=bool(cfg.get("enabled", False)),
-            bot_token=str(cfg.get("bot_token", "")),
-            chat_id=str(cfg.get("chat_id", "")),
-            topic_id=str(cfg.get("topic_id", "") or ""),
+            enabled=enabled,
+            bot_token=bot_token,
+            chat_id=chat_id,
+            topic_id=topic_id,
             tone=str(cfg.get("tone", "professional")),
         )
         self.logger = get_logger("telegram")
+
+        if configured_enabled and not enabled:
+            self.logger.warning("Telegram is enabled in config but credentials are missing.")
 
     @property
     def _api_url(self) -> str:
@@ -67,24 +81,23 @@ class TelegramSender:
             return False
 
     def send_product_changes(self, new_urls: list[str], deleted_urls: list[str]) -> bool:
-        hook = "**Stop scrolling: product catalog changed.**"
         lines = [
-            hook,
+            "**Stop scrolling: product catalog changed.**",
             "",
-            "**📦 Product Delta**",
-            f"• Added: **{len(new_urls)}**",
-            f"• Deleted: **{len(deleted_urls)}**",
+            "**Product Delta**",
+            f"- Added: **{len(new_urls)}**",
+            f"- Deleted: **{len(deleted_urls)}**",
             "",
             "> Review changes below and validate high-impact listings.",
             "",
         ]
         if new_urls:
-            lines.append("**🟢 New Products**")
-            lines.extend(f"• {_escape(url)}" for url in new_urls[:20])
+            lines.append("**New Products**")
+            lines.extend(f"- {_escape(url)}" for url in new_urls[:20])
             lines.append("")
         if deleted_urls:
-            lines.append("**🔴 Deleted Products**")
-            lines.extend(f"• {_escape(url)}" for url in deleted_urls[:20])
+            lines.append("**Deleted Products**")
+            lines.extend(f"- {_escape(url)}" for url in deleted_urls[:20])
             lines.append("")
         lines.append("**CTA:** Please review and confirm if any source needs manual override.")
         return self._send("\n".join(lines))
@@ -93,10 +106,10 @@ class TelegramSender:
         lines = [
             f"**{_escape(title)}**",
             "",
-            "**📊 Run Statistics**",
+            "**Run Statistics**",
         ]
         for key, value in stats.items():
-            lines.append(f"• **{_escape(str(key))}**: {_escape(str(value))}")
+            lines.append(f"- **{_escape(str(key))}**: {_escape(str(value))}")
         lines.extend(
             [
                 "",
@@ -113,9 +126,16 @@ class TelegramSender:
         lines = [
             "**Restock detected. Buying window may be open.**",
             "",
-            "**🟩 Restocked Products**",
+            "**Restocked Products**",
         ]
-        lines.extend(f"• {_escape(url)}" for url in restocked_urls[:50])
-        lines.extend(["", "> Stock was re-validated in the latest run.", "", "**CTA:** Do you want instant follow-up checks for these SKUs?**"])
+        lines.extend(f"- {_escape(url)}" for url in restocked_urls[:50])
+        lines.extend(
+            [
+                "",
+                "> Stock was re-validated in the latest run.",
+                "",
+                "**CTA:** Do you want instant follow-up checks for these SKUs?",
+            ]
+        )
         return self._send("\n".join(lines))
 

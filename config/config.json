@@ -57,6 +57,9 @@
     "bot_token": "",
     "chat_id": "",
     "topic_id": "",
+    "bot_token_env": "TELEGRAM_BOT_TOKEN",
+    "chat_id_env": "TELEGRAM_CHAT_ID",
+    "topic_id_env": "TELEGRAM_TOPIC_ID",
     "tone": "professional"
   },
   "dashboard": {

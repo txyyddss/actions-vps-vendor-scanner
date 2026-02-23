@@ -3,20 +3,36 @@ description: Request a new feature or enhancement
 title: "[Feature] <short description>"
 labels: [feature]
 body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the user outcome first, then implementation ideas.
+
   - type: textarea
     id: problem
     attributes:
-      label: Problem
-      description: What pain point does this solve?
+      label: Problem Statement
+      description: What pain point should be solved?
+      placeholder: We cannot prioritize high-value restocks by region.
     validations:
       required: true
+
   - type: textarea
     id: proposal
     attributes:
       label: Proposed Solution
-      description: Describe your preferred behavior.
+      description: Describe preferred behavior and rough acceptance criteria.
     validations:
       required: true
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Expected Impact
+      description: Accuracy, speed, maintenance cost, or user experience improvements.
+    validations:
+      required: false
+
   - type: textarea
     id: alternatives
     attributes:
