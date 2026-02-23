@@ -48,7 +48,7 @@ def _discover_mode(sites: list[dict[str, Any]], config: dict[str, Any], http_cli
         http_client=http_client,
         max_depth=int(scanner_cfg.get("discoverer_max_depth", 3)),
         max_pages=int(scanner_cfg.get("discoverer_max_pages", 500)),
-        max_workers=min(8, int(scanner_cfg.get("max_workers", 12))),
+        max_workers=min(16, int(scanner_cfg.get("discoverer_max_workers", scanner_cfg.get("max_workers", 12)))),
     )
 
     records: list[dict[str, Any]] = []
@@ -118,17 +118,18 @@ def _product_mode(
     with ThreadPoolExecutor(max_workers=min(8, int(scanner_cfg.get("max_workers", 12)))) as pool:
         future_map = {}
         for site in targets:
+            if not site.get("product_scanner"):
+                continue
             special_crawler = str(site.get("special_crawler", "")).strip().lower()
             category = str(site.get("category", "")).lower()
             if special_crawler == "acck_api":
                 future_map[pool.submit(scan_acck_api, site, http_client)] = site["name"]
             elif special_crawler == "akile_api":
                 future_map[pool.submit(scan_akile_api, site, http_client)] = site["name"]
-            elif site.get("product_scanner"):
-                if category == "whmcs":
-                    future_map[pool.submit(scan_whmcs_pids, site, config, http_client, state_store)] = site["name"]
-                elif category == "hostbill":
-                    future_map[pool.submit(scan_hostbill_pids, site, config, http_client, state_store)] = site["name"]
+            elif category == "whmcs":
+                future_map[pool.submit(scan_whmcs_pids, site, config, http_client, state_store)] = site["name"]
+            elif category == "hostbill":
+                future_map[pool.submit(scan_hostbill_pids, site, config, http_client, state_store)] = site["name"]
 
         for future in as_completed(future_map):
             rows.extend(future.result())
@@ -218,4 +219,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

@@ -24,10 +24,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements.txt
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('requirements.txt') }}
       - name: Install Chromium for Playwright fallback
         run: python -m playwright install chromium
         continue-on-error: true
@@ -52,19 +59,6 @@ jobs:
           name: discoverer-output
           path: data/tmp/discoverer.json
           if-no-files-found: warn
-      - name: Stop FlareSolverr
-        if: always()
-        run: |
-          IDS="$(docker ps -q --filter ancestor=ghcr.io/flaresolverr/flaresolverr:latest)"
-          if [ -z "$IDS" ]; then
-            IDS="$(docker ps -q --filter ancestor=ghcr.io/flaresolverr/flaresolverr)"
-          fi
-          if [ -n "$IDS" ]; then
-            docker rm -f $IDS
-            echo "FlareSolverr stopped."
-          else
-            echo "No FlareSolverr container found."
-          fi
 
   category_scanner:
     runs-on: ubuntu-latest
@@ -81,10 +75,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements.txt
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('requirements.txt') }}
       - name: Install Chromium for Playwright fallback
         run: python -m playwright install chromium
         continue-on-error: true
@@ -109,19 +110,6 @@ jobs:
           name: category-output
           path: data/tmp/category.json
           if-no-files-found: warn
-      - name: Stop FlareSolverr
-        if: always()
-        run: |
-          IDS="$(docker ps -q --filter ancestor=ghcr.io/flaresolverr/flaresolverr:latest)"
-          if [ -z "$IDS" ]; then
-            IDS="$(docker ps -q --filter ancestor=ghcr.io/flaresolverr/flaresolverr)"
-          fi
-          if [ -n "$IDS" ]; then
-            docker rm -f $IDS
-            echo "FlareSolverr stopped."
-          else
-            echo "No FlareSolverr container found."
-          fi
 
   product_scanner:
     runs-on: ubuntu-latest
@@ -138,10 +126,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements.txt
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('requirements.txt') }}
       - name: Install Chromium for Playwright fallback
         run: python -m playwright install chromium
         continue-on-error: true
@@ -166,19 +161,6 @@ jobs:
           name: product-output
           path: data/tmp/product.json
           if-no-files-found: warn
-      - name: Stop FlareSolverr
-        if: always()
-        run: |
-          IDS="$(docker ps -q --filter ancestor=ghcr.io/flaresolverr/flaresolverr:latest)"
-          if [ -z "$IDS" ]; then
-            IDS="$(docker ps -q --filter ancestor=ghcr.io/flaresolverr/flaresolverr)"
-          fi
-          if [ -n "$IDS" ]; then
-            docker rm -f $IDS
-            echo "FlareSolverr stopped."
-          else
-            echo "No FlareSolverr container found."
-          fi
 
   merge_notify:
     runs-on: ubuntu-latest
@@ -188,6 +170,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements.txt
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip

@@ -41,6 +41,7 @@
   },
   "scanner": {
     "max_workers": 12,
+    "discoverer_max_workers": 12,
     "scan_batch_size": 48,
     "discoverer_max_depth": 3,
     "discoverer_max_pages": 500,

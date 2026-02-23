@@ -18,6 +18,13 @@ def test_normalize_url_force_english_overrides_non_english_language_value() -> N
     assert "language=norwegian" not in normalized
 
 
+def test_normalize_url_force_english_strips_malformed_amp_language_query_key() -> None:
+    url = "https://console.po0.com/store/tencent-can-bgp?amp%3Blanguage=norwegian&language=english"
+    normalized = normalize_url(url, force_english=True)
+    assert "amp%3Blanguage" not in normalized
+    assert normalized.count("language=english") == 1
+
+
 def test_classify_contact_url_as_invalid() -> None:
     result = classify_url("https://console.po0.com/contact.php")
     assert result.is_invalid_product_url is True
@@ -26,6 +33,12 @@ def test_classify_contact_url_as_invalid() -> None:
 
 def test_discovery_skip_non_english_language_url() -> None:
     skip, reason = should_skip_discovery_url("https://console.po0.com/store/vps?language=norwegian")
+    assert skip is True
+    assert "non-english-language" in reason
+
+
+def test_discovery_skip_non_english_language_url_with_malformed_amp_key() -> None:
+    skip, reason = should_skip_discovery_url("https://console.po0.com/store/vps?amp%3Blanguage=norwegian")
     assert skip is True
     assert "non-english-language" in reason
 

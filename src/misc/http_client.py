@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -69,6 +70,13 @@ class HttpClient:
             session_ttl_minutes=int(flaresolverr_cfg.get("session_ttl_minutes", 30)),
         )
         self.flaresolverr_enabled = bool(flaresolverr_cfg.get("enabled", True))
+        self.cookie_reuse_enabled = bool(flaresolverr_cfg.get("reuse_cookies", True))
+        configured_cookie_ttl = int(
+            flaresolverr_cfg.get("cookie_ttl_seconds", int(flaresolverr_cfg.get("session_ttl_minutes", 30)) * 60)
+        )
+        self.cookie_reuse_ttl_seconds = max(60, configured_cookie_ttl)
+        self._cookie_lock = threading.Lock()
+        self._cookies_by_domain: dict[str, tuple[dict[str, str], float]] = {}
 
         self.browser = BrowserClient(
             enabled=bool(playwright_cfg.get("enabled", True)),
@@ -81,6 +89,89 @@ class HttpClient:
         proxy_cfg = config.get("proxy", {})
         if bool(proxy_cfg.get("enabled", False)):
             self.default_proxy_url = str(proxy_cfg.get("url", "")).strip()
+
+    @staticmethod
+    def _cookie_domain_matches(request_domain: str, cookie_domain: str) -> bool:
+        normalized_cookie_domain = cookie_domain.strip().lstrip(".").lower()
+        if not normalized_cookie_domain:
+            return True
+        request_lower = request_domain.lower()
+        return request_lower == normalized_cookie_domain or request_lower.endswith(f".{normalized_cookie_domain}")
+
+    def _get_cached_cookie_header(self, domain: str) -> str | None:
+        if not self.cookie_reuse_enabled:
+            return None
+
+        now = time.time()
+        with self._cookie_lock:
+            cached = self._cookies_by_domain.get(domain)
+            if not cached:
+                return None
+            cookies, expires_at = cached
+            if not cookies or expires_at <= now:
+                self._cookies_by_domain.pop(domain, None)
+                return None
+            return "; ".join(f"{name}={value}" for name, value in sorted(cookies.items()))
+
+    def _clear_cached_cookies(self, domain: str) -> None:
+        with self._cookie_lock:
+            self._cookies_by_domain.pop(domain, None)
+
+    def _store_cookies(self, domain: str, cookies: list[dict[str, Any]]) -> None:
+        if not self.cookie_reuse_enabled or not cookies:
+            return
+
+        now = time.time()
+        merged: dict[str, str] = {}
+        with self._cookie_lock:
+            cached = self._cookies_by_domain.get(domain)
+            if cached and cached[1] > now:
+                merged.update(cached[0])
+
+        expires_at = now + self.cookie_reuse_ttl_seconds
+        for cookie in cookies:
+            name = str(cookie.get("name", "")).strip()
+            if not name:
+                continue
+
+            cookie_domain = str(cookie.get("domain", "")).strip().lower()
+            if cookie_domain and not self._cookie_domain_matches(domain, cookie_domain):
+                continue
+
+            raw_value = cookie.get("value")
+            if raw_value is None:
+                merged.pop(name, None)
+                continue
+
+            raw_expires = cookie.get("expires")
+            if isinstance(raw_expires, (int, float)) and raw_expires > 0:
+                if raw_expires <= now:
+                    merged.pop(name, None)
+                    continue
+                expires_at = min(expires_at, float(raw_expires))
+
+            merged[name] = str(raw_value)
+
+        if not merged:
+            self._clear_cached_cookies(domain)
+            return
+
+        with self._cookie_lock:
+            self._cookies_by_domain[domain] = (merged, expires_at)
+
+    @staticmethod
+    def _response_cookies(response: httpx.Response) -> list[dict[str, Any]]:
+        cookies: list[dict[str, Any]] = []
+        for cookie in response.cookies.jar:
+            cookies.append(
+                {
+                    "name": cookie.name,
+                    "value": cookie.value,
+                    "domain": cookie.domain,
+                    "expires": cookie.expires,
+                }
+            )
+        return cookies
 
     @staticmethod
     def _is_cloudflare_like(status_code: int | None, text: str, headers: dict[str, str] | None = None) -> bool:
@@ -110,9 +201,11 @@ class HttpClient:
             return True
         return False
 
-    def _direct_get(self, url: str, proxy_url: str | None = None) -> FetchResult:
+    def _direct_get(self, url: str, proxy_url: str | None = None, cookie_header: str | None = None) -> FetchResult:
         start = time.perf_counter()
         headers = {"User-Agent": self.user_agent, "Accept-Language": self.accept_language}
+        if cookie_header:
+            headers["Cookie"] = cookie_header
         try:
             client_kwargs: dict[str, Any] = {
                 "timeout": self.timeout,
@@ -125,6 +218,9 @@ class HttpClient:
 
             with httpx.Client(**client_kwargs) as client:
                 response = client.get(url)
+
+            response_domain = extract_domain(str(response.url)) or extract_domain(url)
+            self._store_cookies(response_domain, self._response_cookies(response))
 
             elapsed = int((time.perf_counter() - start) * 1000)
             return FetchResult(
@@ -178,7 +274,8 @@ class HttpClient:
         last_error: str | None = None
         for attempt in range(1, self.backoff.max_attempts + 1):
             self.rate_limiter.wait_for_slot(normalized_url)
-            direct = self._direct_get(url=normalized_url, proxy_url=active_proxy)
+            cached_cookie_header = self._get_cached_cookie_header(domain)
+            direct = self._direct_get(url=normalized_url, proxy_url=active_proxy, cookie_header=cached_cookie_header)
             self.logger.info(
                 "fetch direct attempt=%s url=%s status=%s elapsed_ms=%s",
                 attempt,
@@ -197,6 +294,8 @@ class HttpClient:
                 else:
                     reason = "cloudflare-like-challenge" if challenge_like else f"status={direct.status_code}"
                     self.logger.info("direct tier fallback url=%s attempt=%s reason=%s", normalized_url, attempt, reason)
+                    if challenge_like and cached_cookie_header:
+                        self._clear_cached_cookies(domain)
 
             if self.flaresolverr_enabled:
                 fs = self.flaresolverr.get(url=normalized_url, domain=domain, proxy_url=active_proxy)
@@ -207,6 +306,8 @@ class HttpClient:
                     fs.ok,
                     fs.status_code,
                 )
+                if fs.ok:
+                    self._store_cookies(domain, fs.cookies)
                 if fs.ok and not self._is_cloudflare_like(fs.status_code, fs.body, None):
                     self.circuit_breaker.record_success(domain)
                     return FetchResult(
@@ -236,6 +337,9 @@ class HttpClient:
                     browser.ok,
                     browser.status_code,
                 )
+                if browser.ok:
+                    browser_domain = extract_domain(browser.final_url) or domain
+                    self._store_cookies(browser_domain, browser.cookies)
                 if browser.ok and browser.body:
                     self.circuit_breaker.record_success(domain)
                     return FetchResult(

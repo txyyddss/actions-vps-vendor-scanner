@@ -40,6 +40,7 @@ def scan_whmcs_pids(
     tail_window = int(scanner_cfg.get("stop_tail_window", 60))
     inactive_streak_limit = int(scanner_cfg.get("stop_inactive_streak", max(40, tail_window)))
     learned_high = int(site_state.get("whmcs_pid_highwater", 0))
+    resume_start = max(0, learned_high - tail_window) if learned_high > 0 else 0
     max_workers = min(int(scanner_cfg.get("max_workers", 10)), 16)
     batch_size = int(scanner_cfg.get("scan_batch_size", max_workers * 3))
     planner = AdaptiveScanController(
@@ -48,15 +49,28 @@ def scan_whmcs_pids(
         tail_window=tail_window,
         learned_high=learned_high,
         inactive_streak_limit=inactive_streak_limit,
+        start_id=resume_start,
     )
     records_by_url: dict[str, dict[str, Any]] = {}
     discovered_ids: list[int] = []
+    batches_processed = 0
 
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         while True:
             batch_ids = planner.next_batch(batch_size)
             if not batch_ids:
                 break
+            batches_processed += 1
+            if batches_processed == 1 or batches_processed % 10 == 0:
+                logger.info(
+                    "whmcs pid progress site=%s start=%s scanned_to=%s active_max=%s inactive_streak=%s discovered=%s",
+                    site_name,
+                    resume_start,
+                    planner.last_processed_id,
+                    planner.current_max,
+                    planner.inactive_streak,
+                    len(records_by_url),
+                )
 
             future_map = {
                 # Keep browser fallback enabled for product scans on challenge-protected sites.

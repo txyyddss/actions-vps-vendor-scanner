@@ -82,3 +82,19 @@ def test_discoverer_split_candidates_detects_store_category_and_product() -> Non
     assert "https://example.com/store/hkg-vps/1gb-plan" in products
     assert "https://example.com/index.php?rp=%2Fstore%2Fjp-vps" in categories
     assert "https://example.com/index.php?rp=%2Fstore%2Fjp-vps%2F2gb-plan" in products
+
+
+def test_discoverer_seed_urls_find_catalog_when_root_only_shows_login() -> None:
+    root = "https://example.com/"
+    pages = {
+        # Simulate a login-like landing page with no useful links.
+        "https://example.com/?language=english": "<html><a href='/index.php?rp=/login'>login</a></html>",
+        # Seed URL should still be visited and produce product candidates.
+        "https://example.com/cart.php?language=english": "<html><a href='/cart.php?a=add&pid=7'>p7</a></html>",
+    }
+    client = FakeHttpClient(pages)
+    discoverer = LinkDiscoverer(http_client=client, max_depth=1, max_pages=10, max_workers=4)
+    result = discoverer.discover(site_name="Example", base_url=root)
+
+    assert "https://example.com/cart.php?language=english" in client.calls
+    assert "https://example.com/cart.php?a=add&pid=7" in result.product_candidates

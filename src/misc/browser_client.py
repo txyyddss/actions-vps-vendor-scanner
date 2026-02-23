@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 from src.misc.logger import get_logger
 
@@ -18,6 +19,7 @@ class BrowserFetchResult:
     status_code: int | None
     final_url: str
     body: str
+    cookies: list[dict[str, Any]] = field(default_factory=list)
     error: str | None = None
 
 
@@ -46,9 +48,9 @@ class BrowserClient:
                 body = page.content()
                 final_url = page.url
                 status = response.status if response else None
+                cookies = page.context.cookies()
                 browser.close()
-                return BrowserFetchResult(ok=True, status_code=status, final_url=final_url, body=body)
+                return BrowserFetchResult(ok=True, status_code=status, final_url=final_url, body=body, cookies=cookies)
         except PlaywrightError as exc:
             self.logger.warning("Playwright fetch failed for %s: %s", url, exc)
             return BrowserFetchResult(ok=False, status_code=None, final_url=url, body="", error=str(exc))
-

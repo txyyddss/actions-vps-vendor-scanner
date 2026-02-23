@@ -30,6 +30,7 @@ def scan_whmcs_gids(
     tail_window = int(scanner_cfg.get("stop_tail_window", 60))
     inactive_streak_limit = int(scanner_cfg.get("stop_inactive_streak", max(40, tail_window)))
     learned_high = int(site_state.get("whmcs_gid_highwater", 0))
+    resume_start = max(0, learned_high - tail_window) if learned_high > 0 else 0
     max_workers = min(int(scanner_cfg.get("max_workers", 10)), 12)
     batch_size = int(scanner_cfg.get("scan_batch_size", max_workers * 3))
     planner = AdaptiveScanController(
@@ -38,16 +39,29 @@ def scan_whmcs_gids(
         tail_window=tail_window,
         learned_high=learned_high,
         inactive_streak_limit=inactive_streak_limit,
+        start_id=resume_start,
     )
     results: list[dict[str, Any]] = []
     unique_urls: set[str] = set()
     discovered_ids: list[int] = []
+    batches_processed = 0
 
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         while True:
             batch_ids = planner.next_batch(batch_size)
             if not batch_ids:
                 break
+            batches_processed += 1
+            if batches_processed == 1 or batches_processed % 10 == 0:
+                logger.info(
+                    "whmcs gid progress site=%s start=%s scanned_to=%s active_max=%s inactive_streak=%s discovered=%s",
+                    site_name,
+                    resume_start,
+                    planner.last_processed_id,
+                    planner.current_max,
+                    planner.inactive_streak,
+                    len(results),
+                )
 
             future_map = {
                 # Keep browser fallback enabled for category scans on challenge-protected sites.

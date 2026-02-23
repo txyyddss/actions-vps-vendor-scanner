@@ -53,6 +53,13 @@ class UrlClassification:
     reason: str
 
 
+def _normalize_query_key(key: str) -> str:
+    normalized = key.strip().lower().lstrip("&")
+    while normalized.startswith("amp;"):
+        normalized = normalized[4:]
+    return normalized
+
+
 def normalize_url(url: str, base_url: str | None = None, force_english: bool = False) -> str:
     if base_url:
         url = urljoin(base_url, url)
@@ -64,12 +71,19 @@ def normalize_url(url: str, base_url: str | None = None, force_english: bool = F
     if path != "/" and path.endswith("/"):
         path = path[:-1]
 
-    query_pairs = [(k, v) for k, v in parse_qsl(parsed.query, keep_blank_values=True) if k]
-    query_pairs = [(k, v) for k, v in query_pairs if k.lower() not in VOLATILE_QUERY_KEYS]
+    raw_pairs = [(k, v) for k, v in parse_qsl(parsed.query, keep_blank_values=True) if k]
+    query_pairs: list[tuple[str, str]] = []
+    for key, value in raw_pairs:
+        normalized_key = _normalize_query_key(key)
+        if not normalized_key:
+            continue
+        if normalized_key in VOLATILE_QUERY_KEYS:
+            continue
+        query_pairs.append((normalized_key, value))
 
     if force_english:
         # Always force a deterministic English hint and replace any existing language value.
-        query_pairs = [(k, v) for k, v in query_pairs if k.lower() != "language"]
+        query_pairs = [(k, v) for k, v in query_pairs if k not in LANGUAGE_QUERY_KEYS]
         query_pairs.append(("language", "english"))
 
     query_pairs = sorted(query_pairs, key=lambda item: item[0].lower())
@@ -125,7 +139,7 @@ def should_skip_discovery_url(url: str) -> tuple[bool, str]:
 
     query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
     for key, value in query_pairs:
-        key_lower = key.lower()
+        key_lower = _normalize_query_key(key)
         if key_lower in LANGUAGE_QUERY_KEYS:
             language_tag = value.strip().lower()
             if language_tag and language_tag not in ENGLISH_LANGUAGE_TAGS:

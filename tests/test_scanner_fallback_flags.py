@@ -133,3 +133,32 @@ def test_special_api_scanners_use_browser_fallback() -> None:
 
     assert (ACCK_API_URL, False, True) in fake.calls
     assert (AKILE_API_URL, False, True) in fake.calls
+
+
+def test_whmcs_pid_scanner_resumes_from_highwater_tail(tmp_path) -> None:
+    fake = FakeHttpClient()
+    state_store = StateStore(tmp_path / "state.json")
+    state_store.update_site_state("ResumeWHMCS", {"whmcs_pid_highwater": 120})
+
+    config = {
+        "scanner": {
+            "max_workers": 1,
+            "scan_batch_size": 1,
+            "initial_scan_floor": 0,
+            "stop_tail_window": 10,
+            "stop_inactive_streak": 8,
+            "default_scan_bounds": {
+                "whmcs_gid_max": 0,
+                "whmcs_pid_max": 300,
+                "hostbill_catid_max": 0,
+                "hostbill_pid_max": 0,
+            },
+        }
+    }
+    site = _site("ResumeWHMCS", "https://example.com/")
+    site["scan_bounds"]["whmcs_pid_max"] = 300
+
+    scan_whmcs_pids(site, config, fake, state_store)
+    assert fake.calls
+    first_url, _, _ = fake.calls[0]
+    assert "pid=110" in first_url

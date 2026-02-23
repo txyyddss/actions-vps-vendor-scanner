@@ -30,6 +30,22 @@ class LinkDiscoverer:
         self.logger = get_logger("discoverer")
 
     @staticmethod
+    def _seed_urls(root: str) -> set[str]:
+        # Seed multiple likely catalog entry points so login-redirect roots do not end discovery early.
+        candidates = {
+            root,
+            urljoin(root, "/index.php"),
+            urljoin(root, "/cart.php"),
+            urljoin(root, "/store"),
+            urljoin(root, "/index.php?rp=/store"),
+        }
+        seeded: set[str] = set()
+        for candidate in candidates:
+            seeded.add(normalize_url(candidate, force_english=False))
+            seeded.add(normalize_url(candidate, force_english=True))
+        return seeded
+
+    @staticmethod
     def _extract_links(html: str, base_url: str) -> set[str]:
         soup = BeautifulSoup(html, "lxml")
         links: set[str] = set()
@@ -117,8 +133,22 @@ class LinkDiscoverer:
                     # Discoverer should allow full fallback chain for anti-bot protected pages.
                     future_map[pool.submit(self.http_client.get, url, True, True)] = url
 
+                processed = 0
+                total = len(future_map)
                 for future in as_completed(future_map):
                     source_url = future_map[future]
+                    processed += 1
+                    if processed == 1 or processed % 100 == 0:
+                        self.logger.info(
+                            "discoverer progress depth=%s site=%s fetched=%s/%s visited=%s products=%s categories=%s",
+                            depth,
+                            site_name,
+                            processed,
+                            total,
+                            len(visited),
+                            len(product_candidates),
+                            len(category_candidates),
+                        )
                     try:
                         result = future.result()
                     except Exception as exc:  # noqa: BLE001
@@ -140,6 +170,10 @@ class LinkDiscoverer:
                     products, categories = self._split_candidates(new_links)
                     product_candidates.update(products)
                     category_candidates.update(categories)
+
+            if depth == 0 and not product_candidates and not category_candidates:
+                # If the root is login/challenge-like, bootstrap known catalog entrypoints.
+                next_layer.update(self._seed_urls(root) - visited)
 
             self.logger.info(
                 "discoverer depth=%s site=%s visited=%s frontier=%s products=%s categories=%s",
