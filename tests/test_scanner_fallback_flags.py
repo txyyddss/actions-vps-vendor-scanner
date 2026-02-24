@@ -33,6 +33,7 @@ class FakeHttpClient:
             text=self.payload_by_url.get(url, "<html></html>"),
             headers={},
             tier="direct",
+            elapsed_ms=10,
             error=None,
         )
 
