@@ -73,67 +73,48 @@ def _discover_mode(sites: list[dict[str, Any]], config: dict[str, Any], http_cli
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("discoverer failed site=%s error=%s", site.get("name", ""), exc)
                     continue
-                # Respect product_scanner / category_scanner switches even for discoverer output.
-                emit_products = site.get("product_scanner", True)
-                emit_categories = site.get("category_scanner", True)
-                if emit_products:
-                    for url in result.product_candidates:
-                        records.append(
-                            {
-                                "site": site["name"],
-                                "platform": site.get("category", ""),
-                                "scan_type": "discoverer",
-                                "source_priority": "discoverer",
-                                "canonical_url": url,
-                                "source_url": url,
-                                "stock_status": "unknown",
-                                "name_raw": "",
-                                "name_en": "",
-                                "description_raw": "",
-                                "description_en": "",
-                                "cycles": [],
-                                "locations_raw": [],
-                                "locations_en": [],
-                                "price_raw": "",
-                                "evidence": ["discoverer-candidate"],
-                            }
-                        )
-                else:
-                    if result.product_candidates:
-                        logger.info(
-                            "discoverer skipping %s product candidates for site=%s (product_scanner=false)",
-                            len(result.product_candidates),
-                            site.get("name", ""),
-                        )
-                if emit_categories:
-                    for url in result.category_candidates:
-                        records.append(
-                            {
-                                "site": site["name"],
-                                "platform": site.get("category", ""),
-                                "scan_type": "discoverer",
-                                "source_priority": "discoverer",
-                                "canonical_url": url,
-                                "source_url": url,
-                                "stock_status": "unknown",
-                                "name_raw": "",
-                                "name_en": "",
-                                "description_raw": "",
-                                "description_en": "",
-                                "cycles": [],
-                                "locations_raw": [],
-                                "locations_en": [],
-                                "price_raw": "",
-                                "evidence": ["discoverer-category-candidate"],
-                            }
-                        )
-                else:
-                    if result.category_candidates:
-                        logger.info(
-                            "discoverer skipping %s category candidates for site=%s (category_scanner=false)",
-                            len(result.category_candidates),
-                            site.get("name", ""),
-                        )
+                for url in result.product_candidates:
+                    records.append(
+                        {
+                            "site": site["name"],
+                            "platform": site.get("category", ""),
+                            "scan_type": "discoverer",
+                            "source_priority": "discoverer",
+                            "canonical_url": url,
+                            "source_url": url,
+                            "stock_status": "unknown",
+                            "name_raw": "",
+                            "name_en": "",
+                            "description_raw": "",
+                            "description_en": "",
+                            "cycles": [],
+                            "locations_raw": [],
+                            "locations_en": [],
+                            "price_raw": "",
+                            "evidence": ["discoverer-candidate"],
+                        }
+                    )
+                for url in result.category_candidates:
+                    records.append(
+                        {
+                            "site": site["name"],
+                            "platform": site.get("category", ""),
+                            "scan_type": "discoverer",
+                            "source_priority": "discoverer",
+                            "canonical_url": url,
+                            "source_url": url,
+                            "stock_status": "unknown",
+                            "name_raw": "",
+                            "name_en": "",
+                            "description_raw": "",
+                            "description_en": "",
+                            "cycles": [],
+                            "locations_raw": [],
+                            "locations_en": [],
+                            "price_raw": "",
+                            "evidence": ["discoverer-category-candidate"],
+                        }
+                    )
     _save_tmp("discoverer", records)
     return records
 

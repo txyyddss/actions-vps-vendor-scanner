@@ -38,7 +38,6 @@ class TelegramConfig:
     bot_token: str
     chat_id: str
     topic_id: int | None = None
-    tone: str = "professional"
 
 
 def _normalize_topic_id(value: str) -> int | None:
@@ -77,7 +76,6 @@ class TelegramSender:
             bot_token=bot_token,
             chat_id=chat_id,
             topic_id=topic_id,
-            tone=str(cfg.get("tone", "professional")),
         )
         self.logger = get_logger("telegram")
         self._last_send_time: float = 0.0

@@ -82,3 +82,17 @@ def test_discovery_skip_supporttickets_url() -> None:
     skip, reason = should_skip_discovery_url("https://my.rfchost.com/supporttickets.php?language=english")
     assert skip is True
     assert "blocked-path" in reason
+
+
+def test_discovery_skip_media_url() -> None:
+    skip, reason = should_skip_discovery_url(
+        "https://backwaves.net/templates/lagom2/assets/img/page-manager/lagom-color-schemes/dark/home-support.png?language=english"
+    )
+    assert skip is True
+    assert "media-or-static-file" in reason
+
+
+def test_discovery_skip_svg_media_url() -> None:
+    skip, reason = should_skip_discovery_url("https://example.com/assets/icon.svg?v=123")
+    assert skip is True
+    assert "media-or-static-file" in reason

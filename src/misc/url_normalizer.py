@@ -5,7 +5,6 @@ import re
 from dataclasses import dataclass
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
-# Keep these slash-free so we can match direct paths and encoded route fragments consistently.
 INVALID_PATH_PATTERNS = (
     "contact",
     "contact.php",
@@ -23,6 +22,26 @@ INVALID_PATH_PATTERNS = (
     "register",
     "affiliates",
 )
+
+INVALID_EXTENSIONS = {
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".webp",
+    ".svg",
+    ".ico",
+    ".css",
+    ".js",
+    ".woff",
+    ".woff2",
+    ".ttf",
+    ".eot",
+    ".pdf",
+    ".zip",
+    ".tar",
+    ".gz",
+}
 
 VOLATILE_QUERY_KEYS = {
     "sid",
@@ -144,6 +163,9 @@ def should_skip_discovery_url(url: str) -> tuple[bool, str]:
     for pattern in INVALID_PATH_PATTERNS:
         if pattern in parsed.path:
             return True, f"blocked-path:{pattern}"
+
+    if parsed.path.endswith(tuple(INVALID_EXTENSIONS)):
+        return True, "media-or-static-file"
 
     query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
     for key, value in query_pairs:

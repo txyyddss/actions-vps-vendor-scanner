@@ -168,4 +168,4 @@ def test_discover_mode_runs_even_when_both_outputs_disabled(monkeypatch) -> None
     rows = _discover_mode(sites, config, DummyHttpClient())
 
     assert set(called_sites) == {"SkipMe", "KeepMe"}
-    assert len(rows) == 1
+    assert len(rows) == 4

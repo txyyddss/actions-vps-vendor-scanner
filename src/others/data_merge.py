@@ -69,17 +69,21 @@ def merge_records(
     all_records.extend(discoverer_records)
     all_records.extend(product_records)
     all_records.extend(category_records)
-
     for incoming in all_records:
         sanitized = _sanitize_record(incoming)
         if not sanitized:
             continue
         url = sanitized["canonical_url"]
         existing = merged.get(url)
-        if existing is None or _source_weight(sanitized["source_priority"]) > _source_weight(existing["source_priority"]):
+        if existing is None:
             merged[url] = sanitized
-        elif existing is not None and len(sanitized.get("evidence", [])) > len(existing.get("evidence", [])):
-            merged[url] = sanitized
+        else:
+            weight_new = _source_weight(sanitized["source_priority"])
+            weight_old = _source_weight(existing["source_priority"])
+            if weight_new > weight_old:
+                merged[url] = sanitized
+            elif weight_new == weight_old and len(sanitized.get("evidence", [])) > len(existing.get("evidence", [])):
+                merged[url] = sanitized
 
     now = datetime.now(timezone.utc).isoformat()
     for url, record in merged.items():
