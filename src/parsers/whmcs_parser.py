@@ -115,7 +115,7 @@ def _extract_links(soup: BeautifulSoup) -> tuple[list[str], list[str]]:
             product_links.append(href)
         elif "/store/" in href_lower:
             # /store/<cat>/<product> usually includes at least 2 path elements.
-            path = urlparse(href).path
+            path = urlparse(href_lower).path
             store_tail = path.split("/store/")[-1] if "/store/" in path else ""
             slash_count = store_tail.count("/")
             if slash_count >= 1:

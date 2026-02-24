@@ -302,7 +302,7 @@ class HttpClient:
             self.rate_limiter.wait_for_slot(normalized_url)
             cached_cookie_header = self._get_cached_cookie_header(domain)
             direct = self._direct_get(url=normalized_url, proxy_url=active_proxy, cookie_header=cached_cookie_header)
-            self.logger.info(
+            self.logger.debug(
                 "fetch direct attempt=%s url=%s status=%s elapsed_ms=%s",
                 attempt,
                 normalized_url,
@@ -319,13 +319,13 @@ class HttpClient:
                     return direct
                 else:
                     reason = "cloudflare-like-challenge" if challenge_like else f"status={direct.status_code}"
-                    self.logger.info("direct tier fallback url=%s attempt=%s reason=%s", normalized_url, attempt, reason)
+                    self.logger.debug("direct tier fallback url=%s attempt=%s reason=%s", normalized_url, attempt, reason)
                     if challenge_like and cached_cookie_header:
                         self._clear_cached_cookies(domain)
 
             if self.flaresolverr_enabled:
                 fs = self.flaresolverr.get(url=normalized_url, domain=domain, proxy_url=active_proxy)
-                self.logger.info(
+                self.logger.debug(
                     "fetch flaresolverr attempt=%s url=%s ok=%s status=%s",
                     attempt,
                     normalized_url,
@@ -347,7 +347,7 @@ class HttpClient:
                         elapsed_ms=0,
                     )
                 last_error = fs.error or fs.message
-                self.logger.info(
+                self.logger.debug(
                     "flaresolverr tier fallback url=%s attempt=%s reason=%s",
                     normalized_url,
                     attempt,
@@ -356,7 +356,7 @@ class HttpClient:
 
             if allow_browser_fallback:
                 browser = self.browser.get(url=normalized_url, proxy_url=active_proxy)
-                self.logger.info(
+                self.logger.debug(
                     "fetch browser attempt=%s url=%s ok=%s status=%s",
                     attempt,
                     normalized_url,
@@ -388,6 +388,7 @@ class HttpClient:
             last_error = last_error or direct.error or f"status={direct.status_code}"
 
         self.circuit_breaker.record_failure(domain)
+        self.logger.error("fetch failed completely url=%s reason=%s", normalized_url, last_error or "fetch-failed")
         return FetchResult(
             ok=False,
             requested_url=normalized_url,

@@ -94,10 +94,10 @@ def parse_hostbill_page(html: str, final_url: str) -> ParsedItem:
 
     # Product validity signals for HostBill are multi-source and theme dependent.
     is_non_product_redirect = any(marker in final_lower for marker in NON_PRODUCT_REDIRECT_MARKERS)
-    has_product_signals = has_add_id or has_order_step or bool(_extract_product_links(soup))
-    has_category_signals = bool(_extract_category_links(soup))
+    has_product_signals = has_add_id or has_order_step
+    has_category_signals = bool(_extract_category_links(soup)) or bool(_extract_product_links(soup))
     is_product = has_product_signals and not has_no_services and not is_non_product_redirect
-    is_category = has_category_signals and not has_no_services and not is_non_product_redirect
+    is_category = has_category_signals and not has_no_services and not is_non_product_redirect and not is_product
 
     if has_no_services:
         in_stock: bool | None = None
