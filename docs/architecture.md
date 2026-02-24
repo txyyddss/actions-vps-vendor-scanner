@@ -26,4 +26,4 @@ This project is built around a multi-stage scanner pipeline designed to scale ac
 
 - **Circuit Breaker**: Repeated 500s or timeouts open the circuit, preventing the scanner from hammering a broken vendor.
 - **Rate Limiting**: Configured to respect global QPS limits and per-domain limits.
-- **Tiered Fetching**: Starts with plain HTTPX, falls back to `FlareSolverr` for basic Cloudflare intercepts, and finally escalates to a full `Playwright` browser if the block persists.
+- **Tiered Fetching**: Starts with plain HTTPX, and falls back to `FlareSolverr` for basic Cloudflare intercepts and advanced JS challenges.

@@ -42,12 +42,6 @@
     "reuse_cookies": true,
     "cookie_ttl_seconds": 1800
   },
-  "playwright": {
-    "enabled": false,
-    "headless": true,
-    "timeout_ms": 60000,
-    "wait_until": "networkidle"
-  },
   "proxy": {
     "enabled": false,
     "url": ""

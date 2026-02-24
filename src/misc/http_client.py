@@ -8,7 +8,6 @@ from typing import Any
 
 import httpx
 
-from src.misc.browser_client import BrowserClient
 from src.misc.flaresolverr_client import FlareSolverrClient
 from src.misc.logger import get_logger
 from src.misc.retry_rate_limit import RETRIABLE_STATUS_CODES, BackoffPolicy, CircuitBreaker, DomainRateLimiter, should_retry_status
@@ -30,7 +29,7 @@ class FetchResult:
 
 
 class HttpClient:
-    """Tiered fetcher: direct HTTP -> FlareSolverr -> Playwright."""
+    """Tiered fetcher: direct HTTP -> FlareSolverr."""
 
     def __init__(self, config: dict[str, Any]) -> None:
         """Executes __init__ logic."""
@@ -41,7 +40,6 @@ class HttpClient:
         retry_cfg = config.get("retry", {})
         rate_cfg = config.get("rate_limit", {})
         flaresolverr_cfg = config.get("flaresolverr", {})
-        playwright_cfg = config.get("playwright", {})
 
         self.timeout = float(http_cfg.get("timeout_seconds", 35))
         self.follow_redirects = bool(http_cfg.get("follow_redirects", True))
@@ -93,13 +91,6 @@ class HttpClient:
         self.cookie_reuse_ttl_seconds = max(60, configured_cookie_ttl)
         self._cookie_lock = threading.Lock()
         self._cookies_by_domain: dict[str, tuple[dict[str, str], float]] = {}
-
-        self.browser = BrowserClient(
-            enabled=bool(playwright_cfg.get("enabled", True)),
-            headless=bool(playwright_cfg.get("headless", True)),
-            timeout_ms=int(playwright_cfg.get("timeout_ms", 60000)),
-            wait_until=str(playwright_cfg.get("wait_until", "networkidle")),
-        )
 
         self.default_proxy_url = ""
         proxy_cfg = config.get("proxy", {})
@@ -276,7 +267,6 @@ class HttpClient:
         self,
         url: str,
         force_english: bool = True,
-        allow_browser_fallback: bool = True,
         proxy_url: str | None = None,
     ) -> FetchResult:
         """Executes get logic."""
@@ -353,32 +343,6 @@ class HttpClient:
                     attempt,
                     last_error or "cloudflare-like-challenge",
                 )
-
-            if allow_browser_fallback:
-                browser = self.browser.get(url=normalized_url, proxy_url=active_proxy)
-                self.logger.debug(
-                    "fetch browser attempt=%s url=%s ok=%s status=%s",
-                    attempt,
-                    normalized_url,
-                    browser.ok,
-                    browser.status_code,
-                )
-                if browser.ok:
-                    browser_domain = extract_domain(browser.final_url) or domain
-                    self._store_cookies(browser_domain, browser.cookies)
-                if browser.ok and browser.body:
-                    self.circuit_breaker.record_success(domain)
-                    return FetchResult(
-                        ok=True,
-                        requested_url=normalized_url,
-                        final_url=browser.final_url,
-                        status_code=browser.status_code,
-                        text=browser.body,
-                        headers={},
-                        tier="browser",
-                        elapsed_ms=0,
-                    )
-                last_error = browser.error or last_error
 
             # Retry when direct result indicates transient failure.
             if direct.status_code and direct.status_code in self.retry_status_codes:

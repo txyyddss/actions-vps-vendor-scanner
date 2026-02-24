@@ -6,7 +6,7 @@ A highly resilient, automated product scanner and stock monitor for VPS vendors,
 
 - **Multi-Stage Scanning Pipeline**: Separates the crawling into multiple stages (Discoverer, Category Scanner, Product Scanner, and Merger) to allow efficient parallelization and debugging.
 - **Adaptive Hidden Product Discovery**: Implements intelligent boundary-based ID enumeration (gids, pids, cat_ids) to discover hidden plans and categories, automatically storing highwater marks to reduce future scan times.
-- **Tiered Evasion Network Stack**: Uses a multi-layered fetch approach: First HTTPX direct fetch, fallback to FlareSolverr for basic JS challenges, and Playwright for advanced anti-bot mitigations.
+- **Tiered Evasion Network Stack**: Uses a multi-layered fetch approach: First HTTPX direct fetch, with a fallback to FlareSolverr for advanced JS challenges and anti-bot mitigations.
 - **Robust Anti-Flap Data Merging**: Prioritizes stock status and data fidelity intelligently via a conflict-resolution merge system based on `source_priority`. Retains semantic keys (prices, cycles, locations, English/Raw names) cleanly.
 - **Circuit Breakers & Rate Limits**: Ensures the crawler acts like a good citizen, throttling requests natively and cutting off unresponsive domains before they exhaust action minutes.
 - **Actionable Telegram Alerts**: Chunked, detailed notifications highlighting exactly what changed since the last stock run, with Telegram-friendly formatting.
@@ -32,7 +32,7 @@ pip install -r requirements.txt
 
 ### Configuration Files
 
-- `config/config.json`: Contains engine settings, API urls, Playwright settings, rate limit bounds, crawler limits, and log configurations.
+- `config/config.json`: Contains engine settings, API urls, rate limit bounds, crawler limits, and log configurations.
 - `config/sites.json`: Source of truth for all monitored vendor sites. Contains URLs, category, and enabled capabilities for each.
 
 ### Running the Pipeline Locally

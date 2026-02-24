@@ -121,6 +121,11 @@ class FlareSolverrClient:
             self._session_cache[domain] = (session_id, time.time())
             return session_id
 
+    def _invalidate_session(self, domain: str) -> None:
+        """Executes _invalidate_session logic."""
+        with self._lock:
+            self._session_cache.pop(domain, None)
+
     @staticmethod
     def _is_retriable_error(error_text: str) -> bool:
         """Executes _is_retriable_error logic."""
@@ -190,6 +195,18 @@ class FlareSolverrClient:
                     )
                     time.sleep(self.queue_depth_sleep_seconds)
                 is_retriable = self._is_retriable_error(message)
+
+                is_session_error = "session" in message.lower() and (
+                    "not found" in message.lower() or
+                    "does not exist" in message.lower() or
+                    "invalid" in message.lower() or
+                    "destroyed" in message.lower()
+                )
+
+                if is_session_error:
+                    self._invalidate_session(domain)
+                    is_retriable = True
+
                 if is_retriable and attempt < max_attempts:
                     delay = self._retry_delay(attempt)
                     self.logger.info(
@@ -229,6 +246,18 @@ class FlareSolverrClient:
                         httpx.NetworkError,
                     ),
                 )
+
+                is_session_error = "session" in error_text.lower() and (
+                    "not found" in error_text.lower() or
+                    "does not exist" in error_text.lower() or
+                    "invalid" in error_text.lower() or
+                    "destroyed" in error_text.lower()
+                )
+
+                if is_session_error:
+                    self._invalidate_session(domain)
+                    is_retriable = True
+
                 if is_retriable and attempt < max_attempts:
                     delay = self._retry_delay(attempt)
                     self.logger.info(
