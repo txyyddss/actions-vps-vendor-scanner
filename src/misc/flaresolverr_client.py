@@ -2,6 +2,7 @@ from __future__ import annotations
 """A client for FlareSolverr to bypass Cloudflare and other JS challenges."""
 
 import json
+import random
 import re
 import threading
 import time
@@ -80,13 +81,14 @@ class FlareSolverrClient:
                     self._active_request_slots = depth_after_enqueue
                     return
                 current_in_flight = self._active_request_slots
+            local_delay = random.uniform(0.0, 5.0)
             self.logger.info(
                 "FlareSolverr local throttle in_flight=%s cap=%s; sleeping %.1fs before request",
                 current_in_flight,
                 self.queue_depth_threshold,
-                self.queue_depth_sleep_seconds,
+                local_delay,
             )
-            time.sleep(self.queue_depth_sleep_seconds)
+            time.sleep(local_delay)
 
     def _release_request_slot(self) -> None:
         """Release one previously acquired queue slot."""

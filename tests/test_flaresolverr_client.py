@@ -133,6 +133,7 @@ def test_flaresolverr_queue_guard_sleeps_when_depth_too_high(monkeypatch) -> Non
         with client._request_slot_lock:
             client._active_request_slots = 4
 
+    monkeypatch.setattr("src.misc.flaresolverr_client.random.uniform", lambda low, high: 1.25)  # noqa: ARG005
     monkeypatch.setattr("src.misc.flaresolverr_client.time.sleep", fake_sleep)
 
     client._acquire_request_slot()
@@ -142,7 +143,7 @@ def test_flaresolverr_queue_guard_sleeps_when_depth_too_high(monkeypatch) -> Non
     with client._request_slot_lock:
         active_after_release = client._active_request_slots
 
-    assert sleep_calls == [2.0]
+    assert sleep_calls == [1.25]
     assert active_after_acquire == 5
     assert active_after_release == 4
 
