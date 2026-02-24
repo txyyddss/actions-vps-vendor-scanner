@@ -57,7 +57,7 @@ class LinkDiscoverer:
 
         # Heuristic extraction from script blobs and inline URLs.
         pattern = re.compile(
-            r"(https?://[^'\"\\s<>]+|(?:/index\\.php\\?/cart/[^'\"\\s<>]+|/store/[^'\"\\s<>]+|cart\\.php\\?[^'\"\\s<>]+))",
+            r"""(https?://[^'"\s<>]+|(?:/index\.php\?/cart/[^'"\s<>]+|/store/[^'"\s<>]+|cart\.php\?[^'"\s<>]+))""",
             re.IGNORECASE,
         )
         for match in pattern.finditer(html):

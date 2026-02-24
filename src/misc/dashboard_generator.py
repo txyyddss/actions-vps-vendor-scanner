@@ -205,6 +205,12 @@ APP_JS_TEMPLATE = """const dashboard = window.__DASHBOARD_DATA__;
 let rows = [...dashboard.products];
 let sortState = { key: "site", asc: true };
 
+function esc(str) {
+  const el = document.createElement("span");
+  el.textContent = str;
+  return el.innerHTML;
+}
+
 function renderStats() {
   const statsEl = document.getElementById("stats");
   const cards = [
@@ -215,8 +221,8 @@ function renderStats() {
   ];
   statsEl.innerHTML = cards.map((card) => `
     <article class="stat">
-      <div class="label">${card.label}</div>
-      <div class="value">${card.value}</div>
+      <div class="label">${esc(card.label)}</div>
+      <div class="value">${esc(String(card.value))}</div>
     </article>
   `).join("");
 }
@@ -240,13 +246,13 @@ function renderRows() {
   const body = document.getElementById("products-body");
   body.innerHTML = rows.map((row) => `
     <tr>
-      <td>${row.site}</td>
-      <td title="${row.name_raw}">${row.name_en || row.name_raw || "-"}</td>
-      <td>${row.platform}</td>
-      <td><span class="status ${row.stock_status}">${row.stock_status}</span></td>
-      <td>${row.price_raw || "-"}</td>
-      <td>${row.last_seen_at || "-"}</td>
-      <td><a class="buy-link" href="${row.canonical_url}" target="_blank" rel="noopener">Buy Now</a></td>
+      <td>${esc(row.site)}</td>
+      <td title="${esc(row.name_raw)}">${esc(row.name_en || row.name_raw || "-")}</td>
+      <td>${esc(row.platform)}</td>
+      <td><span class="status ${esc(row.stock_status)}">${esc(row.stock_status)}</span></td>
+      <td>${esc(row.price_raw || "-")}</td>
+      <td>${esc(row.last_seen_at || "-")}</td>
+      <td><a class="buy-link" href="${esc(row.canonical_url)}" target="_blank" rel="noopener">Buy Now</a></td>
     </tr>
   `).join("");
 }
@@ -294,7 +300,10 @@ def generate_dashboard(products_payload: dict[str, Any], output_dir: str = "web"
         "stats": stats,
         "products": products,
     }
-    html = HTML_TEMPLATE.replace("__DATA__", json.dumps(data, ensure_ascii=False))
+    raw_json = json.dumps(data, ensure_ascii=False)
+    # Escape sequences that could break out of the <script> tag to prevent XSS.
+    safe_json = raw_json.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+    html = HTML_TEMPLATE.replace("__DATA__", safe_json)
     (out / "index.html").write_text(html, encoding="utf-8")
     (assets / "style.css").write_text(CSS_TEMPLATE, encoding="utf-8")
     (assets / "app.js").write_text(APP_JS_TEMPLATE, encoding="utf-8")

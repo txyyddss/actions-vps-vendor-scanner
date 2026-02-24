@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from src.misc.config_loader import dump_json, load_json
@@ -8,9 +9,9 @@ from src.misc.logger import get_logger
 from src.misc.url_normalizer import canonicalize_for_merge, classify_url
 
 SOURCE_PRIORITY = {
-    "category_scanner": 1,
-    "product_scanner": 2,
-    "discoverer": 3,
+    "discoverer": 1,
+    "category_scanner": 2,
+    "product_scanner": 3,
 }
 
 
@@ -79,7 +80,10 @@ def merge_records(
     now = datetime.now(timezone.utc).isoformat()
     for url, record in merged.items():
         old = previous_by_url.get(url)
-        record["first_seen_at"] = old.get("first_seen_at") if old else (record.get("first_seen_at") or now)
+        if old and old.get("first_seen_at"):
+            record["first_seen_at"] = old["first_seen_at"]
+        elif not record.get("first_seen_at"):
+            record["first_seen_at"] = now
         record["last_seen_at"] = now
 
     logger.info("merged records=%s", len(merged))
@@ -106,6 +110,8 @@ def diff_products(
 
 
 def load_products(path: str = "data/products.json") -> list[dict[str, Any]]:
+    if not Path(path).exists():
+        return []
     payload = load_json(path)
     return list(payload.get("products", []))
 

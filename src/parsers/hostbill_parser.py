@@ -21,7 +21,7 @@ def _text(node: object) -> str:
 
 
 def _extract_prices(text: str) -> list[str]:
-    return list(dict.fromkeys(re.findall(r"(?:[$€£¥]|HK\\$)\\s?[0-9][0-9,\\.]*\\s?(?:USD|CAD|HKD)?", text)))
+    return list(dict.fromkeys(re.findall(r"(?:[$€£¥]|HK\$)\s?[0-9][0-9,.]*\s?(?:USD|CAD|HKD)?", text)))
 
 
 def _extract_cycles(text: str) -> list[str]:
@@ -42,7 +42,7 @@ def _extract_product_links(soup: BeautifulSoup) -> list[str]:
     for anchor in soup.select("a[href]"):
         href = str(anchor.get("href", ""))
         lower = href.lower()
-        if "action=add&id=" in lower or re.search(r"[?&]id=\\d+", lower):
+        if "action=add&id=" in lower or re.search(r"[?&]id=\d+", lower):
             links.append(href)
 
     return list(dict.fromkeys(links))

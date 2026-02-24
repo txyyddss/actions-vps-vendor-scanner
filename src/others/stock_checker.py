@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from src.misc.config_loader import dump_json, load_json
@@ -95,6 +96,8 @@ def merge_with_previous(
 
 
 def load_stock(path: str = "data/stock.json") -> list[dict[str, Any]]:
+    if not Path(path).exists():
+        return []
     payload = load_json(path)
     return list(payload.get("items", []))
 

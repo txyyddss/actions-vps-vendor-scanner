@@ -11,6 +11,14 @@ permissions:
 jobs:
   stock_alert:
     runs-on: ubuntu-latest
+    services:
+      flaresolverr:
+        image: ghcr.io/flaresolverr/flaresolverr:latest
+        ports:
+          - 8191:8191
+        env:
+          LOG_LEVEL: info
+          CAPTCHA_SOLVER: none
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -30,6 +38,19 @@ jobs:
       - name: Install Chromium for Playwright fallback
         run: python -m playwright install chromium
         continue-on-error: true
+      - name: Wait for FlareSolverr
+        run: |
+          for i in {1..20}; do
+            if curl -fsS -X POST http://127.0.0.1:8191/v1 \
+              -H "Content-Type: application/json" \
+              -d '{"cmd":"sessions.list"}' >/dev/null; then
+              echo "FlareSolverr ready"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "FlareSolverr did not become ready in time"
+          exit 1
       - name: Run stock alert
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -45,5 +66,9 @@ jobs:
             echo "No stock changes"
           else
             git commit -m "chore(stock): refresh stock snapshot"
-            git push
+            for i in 1 2 3 4 5; do
+              git pull --rebase origin main && git push && break
+              echo "Push attempt $i failed, retrying in 5s..."
+              sleep 5
+            done
           fi

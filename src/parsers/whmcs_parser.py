@@ -55,7 +55,7 @@ def _pick_name(soup: BeautifulSoup) -> str:
 
 
 def _extract_prices(text: str) -> list[str]:
-    return list(dict.fromkeys(re.findall(r"(?:[$€£¥]|HK\\$)\\s?[0-9][0-9,\\.]*\\s?(?:USD|CAD|HKD)?", text)))
+    return list(dict.fromkeys(re.findall(r"(?:[$€£¥]|HK\$)\s?[0-9][0-9,.]*\s?(?:USD|CAD|HKD)?", text)))
 
 
 def _extract_cycles(soup: BeautifulSoup) -> list[str]:
@@ -134,7 +134,12 @@ def parse_whmcs_page(html: str, final_url: str) -> ParsedItem:
 
     confproduct = "a=confproduct" in final_lower
     has_oos_marker = any(marker in lowered for marker in OOS_MARKERS)
-    in_stock: bool | None = True if confproduct else (False if has_oos_marker else None)
+    if has_oos_marker:
+        in_stock: bool | None = False
+    elif confproduct:
+        in_stock = True
+    else:
+        in_stock = None
 
     product_links, category_links = _extract_links(soup)
     store_segments = _store_segments_from_url(final_url)

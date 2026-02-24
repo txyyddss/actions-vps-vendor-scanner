@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+import threading
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -8,9 +9,10 @@ from typing import Any
 from src.misc.config_loader import dump_json, load_json
 
 
-@dataclass(slots=True)
 class StateStore:
-    path: Path = Path("data/state.json")
+    def __init__(self, path: Path = Path("data/state.json")) -> None:
+        self.path = path
+        self._lock = threading.Lock()
 
     def load(self) -> dict[str, Any]:
         if not self.path.exists():
@@ -23,11 +25,12 @@ class StateStore:
 
     def get_site_state(self, site_name: str) -> dict[str, Any]:
         payload = self.load()
-        return payload.setdefault("sites", {}).setdefault(site_name, {})
+        return payload.get("sites", {}).get(site_name, {})
 
     def update_site_state(self, site_name: str, updates: dict[str, Any]) -> None:
-        payload = self.load()
-        site_state = payload.setdefault("sites", {}).setdefault(site_name, {})
-        site_state.update(updates)
-        self.save(payload)
+        with self._lock:
+            payload = self.load()
+            site_state = payload.setdefault("sites", {}).setdefault(site_name, {})
+            site_state.update(updates)
+            self.save(payload)
 

@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
 
 from src.misc.logger import get_logger
+
+MAX_MESSAGE_LENGTH = 4096
+MAX_RETRIES = 5
+BASE_RETRY_DELAY = 1.0
+MIN_SEND_INTERVAL = 1.5  # seconds between sends to avoid per-chat rate limit
 
 
 def _escape(text: str) -> str:
@@ -16,6 +22,9 @@ def _escape(text: str) -> str:
         .replace("_", "\\_")
         .replace("*", "\\*")
         .replace("[", "\\[")
+        .replace("]", "\\]")
+        .replace("(", "\\(")
+        .replace(")", "\\)")
         .replace("`", "\\`")
     )
 
@@ -47,7 +56,10 @@ class TelegramSender:
         bot_token = env_bot_token or str(cfg.get("bot_token", "")).strip()
         chat_id = env_chat_id or str(cfg.get("chat_id", "")).strip()
         topic_id = _normalize_topic_id(env_topic_id or str(cfg.get("topic_id", "")))
-        enabled = configured_enabled and bool(bot_token and chat_id)
+        has_env_credentials = bool(env_bot_token and env_chat_id)
+        # Enable if env vars provide credentials (e.g. GitHub Actions secrets),
+        # OR if explicitly enabled in config with credentials present.
+        enabled = bool(bot_token and chat_id) and (has_env_credentials or configured_enabled)
 
         self.config = TelegramConfig(
             enabled=enabled,
@@ -57,6 +69,7 @@ class TelegramSender:
             tone=str(cfg.get("tone", "professional")),
         )
         self.logger = get_logger("telegram")
+        self._last_send_time: float = 0.0
 
         if configured_enabled and not enabled:
             self.logger.warning("Telegram is enabled in config but credentials are missing.")
@@ -65,10 +78,22 @@ class TelegramSender:
     def _api_url(self) -> str:
         return f"https://api.telegram.org/bot{self.config.bot_token}/sendMessage"
 
+    def _throttle(self) -> None:
+        """Ensure minimum interval between sends to avoid per-chat rate limits."""
+        elapsed = time.monotonic() - self._last_send_time
+        if elapsed < MIN_SEND_INTERVAL:
+            time.sleep(MIN_SEND_INTERVAL - elapsed)
+
     def _send(self, text: str) -> bool:
         if not self.config.enabled:
             self.logger.info("Telegram disabled, skipping message:\n%s", text)
             return False
+
+        # Telegram message length limit
+        if len(text) > MAX_MESSAGE_LENGTH:
+            text = text[: MAX_MESSAGE_LENGTH - 20] + "\n\n…(truncated)"
+
+        self._throttle()
 
         payload = {
             "chat_id": self.config.chat_id,
@@ -79,14 +104,100 @@ class TelegramSender:
         if self.config.topic_id:
             payload["message_thread_id"] = self.config.topic_id
 
-        try:
-            with httpx.Client(timeout=20) as client:
-                response = client.post(self._api_url, json=payload)
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                with httpx.Client(timeout=20) as client:
+                    response = client.post(self._api_url, json=payload)
+
+                if response.status_code == 429:
+                    # Respect Telegram's Retry-After header
+                    retry_after = BASE_RETRY_DELAY * (2 ** (attempt - 1))
+                    try:
+                        body = response.json()
+                        retry_after = max(
+                            retry_after,
+                            float(body.get("parameters", {}).get("retry_after", retry_after)),
+                        )
+                    except Exception:  # noqa: BLE001
+                        pass
+                    self.logger.warning(
+                        "Telegram rate limited (429), attempt %s/%s, retrying in %.1fs",
+                        attempt,
+                        MAX_RETRIES,
+                        retry_after,
+                    )
+                    time.sleep(retry_after)
+                    continue
+
                 response.raise_for_status()
-            return True
-        except Exception as exc:  # noqa: BLE001
-            self.logger.warning("Telegram send failed: %s", exc)
-            return False
+                self._last_send_time = time.monotonic()
+                return True
+
+            except httpx.HTTPStatusError as exc:
+                self.logger.warning(
+                    "Telegram send failed (HTTP %s), attempt %s/%s: %s",
+                    exc.response.status_code,
+                    attempt,
+                    MAX_RETRIES,
+                    exc,
+                )
+                if exc.response.status_code >= 500:
+                    time.sleep(BASE_RETRY_DELAY * (2 ** (attempt - 1)))
+                    continue
+                return False
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning(
+                    "Telegram send failed, attempt %s/%s: %s",
+                    attempt,
+                    MAX_RETRIES,
+                    exc,
+                )
+                time.sleep(BASE_RETRY_DELAY * (2 ** (attempt - 1)))
+                continue
+
+        self.logger.error("Telegram send failed after %s attempts", MAX_RETRIES)
+        return False
+
+    def _send_chunked(self, lines: list[str], header_lines: int = 0) -> bool:
+        """Split long messages into multiple sends to stay within Telegram's limit."""
+        header = "\n".join(lines[:header_lines]) if header_lines else ""
+        body_lines = lines[header_lines:]
+
+        chunks: list[str] = []
+        current_chunk: list[str] = []
+        # First chunk includes the header; subsequent chunks do not.
+        first_chunk_overhead = len(header) + 1 if header else 0  # +1 for joining newline
+        current_len = first_chunk_overhead
+
+        for line in body_lines:
+            line_len = len(line) + 1  # +1 for newline
+            if current_len + line_len > MAX_MESSAGE_LENGTH - 50:  # leave margin
+                if current_chunk:
+                    chunks.append("\n".join(current_chunk))
+                current_chunk = [line]
+                # After the first chunk, header is no longer prepended.
+                current_len = line_len
+            else:
+                current_chunk.append(line)
+                current_len += line_len
+
+        if current_chunk:
+            chunks.append("\n".join(current_chunk))
+
+        if not chunks:
+            return self._send(header or "\n".join(lines))
+
+        all_ok = True
+        for i, chunk in enumerate(chunks):
+            if i == 0 and header:
+                text = f"{header}\n{chunk}"
+            elif i > 0:
+                text = f"_(cont.)_\n{chunk}"
+            else:
+                text = chunk
+            if not self._send(text):
+                all_ok = False
+        return all_ok
 
     def send_product_changes(self, new_urls: list[str], deleted_urls: list[str]) -> bool:
         lines = [
@@ -101,14 +212,14 @@ class TelegramSender:
         ]
         if new_urls:
             lines.append("**New Products**")
-            lines.extend(f"- {_escape(url)}" for url in new_urls[:20])
+            lines.extend(f"- {_escape(url)}" for url in new_urls[:50])
             lines.append("")
         if deleted_urls:
             lines.append("**Deleted Products**")
-            lines.extend(f"- {_escape(url)}" for url in deleted_urls[:20])
+            lines.extend(f"- {_escape(url)}" for url in deleted_urls[:50])
             lines.append("")
         lines.append("**CTA:** Please review and confirm if any source needs manual override.")
-        return self._send("\n".join(lines))
+        return self._send_chunked(lines, header_lines=8)
 
     def send_run_stats(self, title: str, stats: dict[str, Any]) -> bool:
         lines = [
@@ -145,4 +256,5 @@ class TelegramSender:
                 "**CTA:** Do you want instant follow-up checks for these SKUs?",
             ]
         )
-        return self._send("\n".join(lines))
+        return self._send_chunked(lines, header_lines=3)
+

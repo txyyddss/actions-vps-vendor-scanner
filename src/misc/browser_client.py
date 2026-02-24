@@ -54,3 +54,6 @@ class BrowserClient:
         except PlaywrightError as exc:
             self.logger.warning("Playwright fetch failed for %s: %s", url, exc)
             return BrowserFetchResult(ok=False, status_code=None, final_url=url, body="", error=str(exc))
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning("Browser fetch unexpected error for %s: %s", url, exc)
+            return BrowserFetchResult(ok=False, status_code=None, final_url=url, body="", error=str(exc))

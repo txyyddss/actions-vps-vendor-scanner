@@ -1,7 +1,7 @@
 from src.others.data_merge import diff_products, merge_records
 
 
-def test_merge_priority_prefers_discoverer() -> None:
+def test_merge_priority_prefers_product_scanner() -> None:
     discoverer = [
         {
             "site": "A",
@@ -28,7 +28,8 @@ def test_merge_priority_prefers_discoverer() -> None:
 
     merged = merge_records(discoverer, product, category, previous_products=[])
     assert len(merged) == 1
-    assert merged[0]["source_priority"] == "discoverer"
+    assert merged[0]["source_priority"] == "product_scanner"
+    assert merged[0]["name_raw"] == "Plan A Product"
 
 
 def test_diff_products_detects_add_delete_and_stock_change() -> None:

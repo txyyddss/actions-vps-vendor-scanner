@@ -112,7 +112,11 @@ def _category_mode(
             elif category == "hostbill":
                 future_map[pool.submit(scan_hostbill_catids, site, config, http_client, state_store)] = site["name"]
         for future in as_completed(future_map):
-            rows.extend(future.result())
+            try:
+                rows.extend(future.result())
+            except Exception as exc:  # noqa: BLE001
+                logger = get_logger("main_scanner")
+                logger.warning("category scan failed site=%s error=%s", future_map.get(future, "unknown"), exc)
 
     _save_tmp("category", rows)
     return rows
@@ -145,7 +149,11 @@ def _product_mode(
                 future_map[pool.submit(scan_hostbill_pids, site, config, http_client, state_store)] = site["name"]
 
         for future in as_completed(future_map):
-            rows.extend(future.result())
+            try:
+                rows.extend(future.result())
+            except Exception as exc:  # noqa: BLE001
+                logger = get_logger("main_scanner")
+                logger.warning("product scan failed site=%s error=%s", future_map.get(future, "unknown"), exc)
 
     _save_tmp("product", rows)
     return rows

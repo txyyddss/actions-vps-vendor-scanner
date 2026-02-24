@@ -12,7 +12,13 @@
     "base_delay_seconds": 1.5,
     "max_delay_seconds": 30,
     "jitter_seconds": 0.5,
-    "retry_status_codes": [429, 500, 502, 503, 504]
+    "retry_status_codes": [
+      429,
+      500,
+      502,
+      503,
+      504
+    ]
   },
   "rate_limit": {
     "global_qps": 4,
@@ -29,7 +35,7 @@
     "session_ttl_minutes": 30
   },
   "playwright": {
-    "enabled": true,
+    "enabled": false,
     "headless": true,
     "timeout_ms": 60000,
     "wait_until": "networkidle"
@@ -56,7 +62,7 @@
     }
   },
   "telegram": {
-    "enabled": false,
+    "enabled": true,
     "bot_token": "",
     "chat_id": "",
     "topic_id": "",
