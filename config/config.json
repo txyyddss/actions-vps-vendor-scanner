@@ -33,6 +33,10 @@
     "url": "http://127.0.0.1:8191/v1",
     "max_timeout_ms": 180000,
     "session_ttl_minutes": 30,
+    "retry_attempts": 3,
+    "retry_base_delay_seconds": 2.0,
+    "retry_max_delay_seconds": 30.0,
+    "retry_jitter_seconds": 0.5,
     "reuse_cookies": true,
     "cookie_ttl_seconds": 1800
   },

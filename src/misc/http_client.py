@@ -78,6 +78,10 @@ class HttpClient:
             url=flaresolverr_cfg.get("url", "http://127.0.0.1:8191/v1"),
             max_timeout_ms=int(flaresolverr_cfg.get("max_timeout_ms", 180000)),
             session_ttl_minutes=int(flaresolverr_cfg.get("session_ttl_minutes", 30)),
+            retry_attempts=int(flaresolverr_cfg.get("retry_attempts", 3)),
+            retry_base_delay_seconds=float(flaresolverr_cfg.get("retry_base_delay_seconds", 2.0)),
+            retry_max_delay_seconds=float(flaresolverr_cfg.get("retry_max_delay_seconds", 30.0)),
+            retry_jitter_seconds=float(flaresolverr_cfg.get("retry_jitter_seconds", 0.5)),
         )
         self.flaresolverr_enabled = bool(flaresolverr_cfg.get("enabled", True))
         self.cookie_reuse_enabled = bool(flaresolverr_cfg.get("reuse_cookies", True))

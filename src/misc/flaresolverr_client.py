@@ -10,6 +10,7 @@ from typing import Any
 import httpx
 
 from src.misc.logger import get_logger
+from src.misc.retry_rate_limit import BackoffPolicy
 
 
 @dataclass(slots=True)
@@ -26,11 +27,26 @@ class FlareSolverrResult:
 
 class FlareSolverrClient:
     """Represents FlareSolverrClient."""
-    def __init__(self, url: str, max_timeout_ms: int = 180000, session_ttl_minutes: int = 30) -> None:
+    def __init__(
+        self,
+        url: str,
+        max_timeout_ms: int = 180000,
+        session_ttl_minutes: int = 30,
+        retry_attempts: int = 3,
+        retry_base_delay_seconds: float = 2.0,
+        retry_max_delay_seconds: float = 30.0,
+        retry_jitter_seconds: float = 0.5,
+    ) -> None:
         """Executes __init__ logic."""
         self.url = url.rstrip("/")
         self.max_timeout_ms = max_timeout_ms
         self.session_ttl_seconds = session_ttl_minutes * 60
+        self.backoff = BackoffPolicy(
+            max_attempts=max(1, int(retry_attempts)),
+            base_delay_seconds=max(0.0, float(retry_base_delay_seconds)),
+            max_delay_seconds=max(0.0, float(retry_max_delay_seconds)),
+            jitter_seconds=max(0.0, float(retry_jitter_seconds)),
+        )
         self._session_cache: dict[str, tuple[str, float]] = {}
         self._lock = threading.Lock()
         self.logger = get_logger("flaresolverr")
@@ -61,49 +77,124 @@ class FlareSolverrClient:
             self._session_cache[domain] = (session_id, time.time())
             return session_id
 
+    @staticmethod
+    def _is_retriable_error(error_text: str) -> bool:
+        """Executes _is_retriable_error logic."""
+        lower = error_text.lower()
+        retriable_markers = (
+            "timeout",
+            "timed out",
+            "too many requests",
+            "rate limit",
+            "429",
+            "temporarily unavailable",
+            "connection reset",
+            "connection refused",
+            "read error",
+            "network",
+            "econnreset",
+            "connecterror",
+            "readtimeout",
+            "connecttimeout",
+        )
+        return any(marker in lower for marker in retriable_markers)
+
+    def _retry_delay(self, attempt: int) -> float:
+        """Executes _retry_delay logic."""
+        return self.backoff.delay_for_attempt(attempt)
+
     def get(self, url: str, domain: str, proxy_url: str | None = None) -> FlareSolverrResult:
         """Executes get logic."""
-        session = self._get_or_create_session(domain)
-        payload: dict[str, Any] = {
-            "cmd": "request.get",
-            "url": url,
-            "maxTimeout": self.max_timeout_ms,
-            "session": session,
-        }
-        if proxy_url:
-            payload["proxy"] = {"url": proxy_url}
+        max_attempts = self.backoff.max_attempts
 
-        try:
-            result = self._post(payload)
-            if result.get("status") != "ok":
+        for attempt in range(1, max_attempts + 1):
+            try:
+                session = self._get_or_create_session(domain)
+                payload: dict[str, Any] = {
+                    "cmd": "request.get",
+                    "url": url,
+                    "maxTimeout": self.max_timeout_ms,
+                    "session": session,
+                }
+                if proxy_url:
+                    payload["proxy"] = {"url": proxy_url}
+
+                result = self._post(payload)
+                if result.get("status") == "ok":
+                    solution = result.get("solution", {})
+                    return FlareSolverrResult(
+                        ok=True,
+                        status_code=solution.get("status"),
+                        final_url=solution.get("url", url),
+                        body=solution.get("response", ""),
+                        cookies=solution.get("cookies", []),
+                        message=result.get("message", ""),
+                    )
+
+                message = str(result.get("message", "unknown-error"))
+                is_retriable = self._is_retriable_error(message)
+                if is_retriable and attempt < max_attempts:
+                    delay = self._retry_delay(attempt)
+                    self.logger.info(
+                        "FlareSolverr transient failure for %s: %s; retrying in %.2fs (%s/%s)",
+                        url,
+                        message,
+                        delay,
+                        attempt,
+                        max_attempts,
+                    )
+                    time.sleep(delay)
+                    continue
+
                 return FlareSolverrResult(
                     ok=False,
                     status_code=None,
                     final_url=url,
                     body="",
                     cookies=[],
-                    message=result.get("message", "unknown-error"),
-                    error=result.get("message"),
+                    message=message,
+                    error=message,
+                )
+            except Exception as exc:  # noqa: BLE001
+                error_text = str(exc)
+                is_retriable = self._is_retriable_error(error_text) or isinstance(
+                    exc,
+                    (
+                        httpx.TimeoutException,
+                        httpx.NetworkError,
+                    ),
+                )
+                if is_retriable and attempt < max_attempts:
+                    delay = self._retry_delay(attempt)
+                    self.logger.info(
+                        "FlareSolverr call failed for %s: %s; retrying in %.2fs (%s/%s)",
+                        url,
+                        exc,
+                        delay,
+                        attempt,
+                        max_attempts,
+                    )
+                    time.sleep(delay)
+                    continue
+
+                self.logger.warning("FlareSolverr call failed for %s: %s", url, exc)
+                return FlareSolverrResult(
+                    ok=False,
+                    status_code=None,
+                    final_url=url,
+                    body="",
+                    cookies=[],
+                    message="request-failed",
+                    error=error_text,
                 )
 
-            solution = result.get("solution", {})
-            return FlareSolverrResult(
-                ok=True,
-                status_code=solution.get("status"),
-                final_url=solution.get("url", url),
-                body=solution.get("response", ""),
-                cookies=solution.get("cookies", []),
-                message=result.get("message", ""),
-            )
-        except Exception as exc:  # noqa: BLE001
-            self.logger.warning("FlareSolverr call failed for %s: %s", url, exc)
-            return FlareSolverrResult(
-                ok=False,
-                status_code=None,
-                final_url=url,
-                body="",
-                cookies=[],
-                message="request-failed",
-                error=str(exc),
-            )
+        return FlareSolverrResult(
+            ok=False,
+            status_code=None,
+            final_url=url,
+            body="",
+            cookies=[],
+            message="request-failed",
+            error="retry-exhausted",
+        )
 

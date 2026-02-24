@@ -159,7 +159,7 @@
         "enabled": true,
         "name": "DMIT",
         "url": "https://www.dmit.io/",
-        "discoverer": true,
+        "discoverer": false,
         "category": "WHMCS",
         "special_crawler": "",
         "product_scanner": true,
