@@ -352,7 +352,11 @@ class HttpClient:
             last_error = last_error or direct.error or f"status={direct.status_code}"
 
         self.circuit_breaker.record_failure(domain)
-        self.logger.error("fetch failed completely url=%s reason=%s", normalized_url, last_error or "fetch-failed")
+        if last_error and ("Challenge not detected" in last_error or "500 Internal" in last_error):
+            self.logger.debug("fetch failed completely url=%s reason=%s", normalized_url, last_error or "fetch-failed")
+        else:
+            self.logger.error("fetch failed completely url=%s reason=%s", normalized_url, last_error or "fetch-failed")
+
         return FetchResult(
             ok=False,
             requested_url=normalized_url,

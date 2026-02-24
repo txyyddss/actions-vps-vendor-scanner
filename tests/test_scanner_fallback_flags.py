@@ -20,11 +20,11 @@ from src.site_specific.akile_api import scan_akile_api
 
 class FakeHttpClient:
     def __init__(self, payload_by_url: dict[str, str] | None = None) -> None:
-        self.calls: list[tuple[str, bool, bool]] = []
+        self.calls: list[tuple[str, bool]] = []
         self.payload_by_url = payload_by_url or {}
 
-    def get(self, url: str, force_english: bool = True, allow_browser_fallback: bool = True):  # noqa: ANN001
-        self.calls.append((url, force_english, allow_browser_fallback))
+    def get(self, url: str, force_english: bool = True):  # noqa: ANN001
+        self.calls.append((url, force_english))
         return SimpleNamespace(
             ok=True,
             requested_url=url,
@@ -67,16 +67,15 @@ def _site(name: str, url: str) -> dict:
     }
 
 
-def test_discoverer_uses_browser_fallback() -> None:
+def test_discoverer_uses_http_client() -> None:
     fake = FakeHttpClient()
     discoverer = LinkDiscoverer(http_client=fake, max_depth=0, max_pages=1, max_workers=1)
     discoverer.discover(site_name="Example", base_url="https://example.com/")
 
     assert fake.calls
-    assert all(call[2] is True for call in fake.calls)
 
 
-def test_whmcs_and_hostbill_scanners_use_browser_fallback(tmp_path) -> None:
+def test_whmcs_and_hostbill_scanners_use_http_client(tmp_path) -> None:
     fake = FakeHttpClient()
     state_store = StateStore(tmp_path / "state.json")
     config = _scanner_config()
@@ -87,7 +86,6 @@ def test_whmcs_and_hostbill_scanners_use_browser_fallback(tmp_path) -> None:
     scan_hostbill_pids(_site("H", "https://example.com/"), config, fake, state_store)
 
     assert fake.calls
-    assert all(call[2] is True for call in fake.calls)
 
 
 @pytest.mark.parametrize(
@@ -118,7 +116,7 @@ def test_hidden_scanners_force_single_worker_per_site(tmp_path, monkeypatch, exe
     assert observed_max_workers == [1]
 
 
-def test_special_api_scanners_use_browser_fallback() -> None:
+def test_special_api_scanners_use_http_client() -> None:
     acck_payload = {
         "data": [
             {
@@ -163,8 +161,8 @@ def test_special_api_scanners_use_browser_fallback() -> None:
     assert scan_acck_api(site, fake)
     assert scan_akile_api(site, fake)
 
-    assert (ACCK_API_URL, False, True) in fake.calls
-    assert (AKILE_API_URL, False, True) in fake.calls
+    assert (ACCK_API_URL, False) in fake.calls
+    assert (AKILE_API_URL, False) in fake.calls
 
 
 def test_whmcs_pid_scanner_resumes_from_highwater_tail(tmp_path) -> None:
@@ -192,7 +190,7 @@ def test_whmcs_pid_scanner_resumes_from_highwater_tail(tmp_path) -> None:
 
     scan_whmcs_pids(site, config, fake, state_store)
     assert fake.calls
-    first_url, _, _ = fake.calls[0]
+    first_url, _ = fake.calls[0]
     assert "pid=110" in first_url
 
 

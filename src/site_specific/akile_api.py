@@ -42,8 +42,8 @@ def scan_akile_api(site: dict[str, Any], http_client: HttpClient) -> list[dict[s
     """Executes scan_akile_api logic."""
     logger = get_logger("akile_api")
     now = datetime.now(timezone.utc).isoformat()
-    # Keep browser fallback enabled to survive anti-bot pages wrapping API responses.
-    response = http_client.get(API_URL, force_english=False, allow_browser_fallback=True)
+    # We rely on FlareSolverr to survive anti-bot pages wrapping API responses.
+    response = http_client.get(API_URL, force_english=False)
     if not response.ok or not response.text:
         logger.warning("akile api fetch failed site=%s error=%s", site["name"], response.error)
         return []

@@ -72,8 +72,8 @@ def scan_hostbill_catids(
                 )
 
             future_map = {
-                # Keep browser fallback enabled for category scans on challenge-protected sites.
-                pool.submit(http_client.get, urljoin(base_url, f"?cmd=cart&cat_id={cat_id}"), True, True): cat_id
+                # Use FlareSolverr to handle challenge-protected sites.
+                pool.submit(http_client.get, urljoin(base_url, f"?cmd=cart&cat_id={cat_id}"), True): cat_id
                 for cat_id in batch_ids
             }
             responses_by_id: dict[int, Any] = {}
@@ -122,6 +122,7 @@ def scan_hostbill_catids(
                                     "platform": "HostBill",
                                     "scan_type": "category_scanner",
                                     "source_priority": "category_scanner",
+                                    "cat_id": cat_id,
                                     "canonical_url": normalize_url(urljoin(response.final_url, plink), force_english=True),
                                     "source_url": response.requested_url,
                                     "stock_status": "unknown",

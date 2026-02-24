@@ -11,7 +11,7 @@ class FakeHttpClient:
         self.pages = pages
         self.calls: list[str] = []
 
-    def get(self, url: str, force_english: bool = True, allow_browser_fallback: bool = True):  # noqa: ANN001, ARG002
+    def get(self, url: str, force_english: bool = True):  # noqa: ANN001, ARG002
         self.calls.append(url)
         html = self.pages.get(url, "<html></html>")
         return SimpleNamespace(

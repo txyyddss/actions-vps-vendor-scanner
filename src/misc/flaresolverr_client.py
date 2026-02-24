@@ -271,7 +271,7 @@ class FlareSolverrClient:
                     time.sleep(delay)
                     continue
 
-                self.logger.warning("FlareSolverr call failed for %s: %s", url, exc)
+                self.logger.debug("FlareSolverr call failed for %s: %s", url, exc)
                 return FlareSolverrResult(
                     ok=False,
                     status_code=None,

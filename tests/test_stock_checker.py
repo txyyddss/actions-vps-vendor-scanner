@@ -3,7 +3,7 @@ from src.others.stock_checker import check_stock, merge_with_previous
 
 
 class FakeHttpClient:
-    def get(self, url: str, force_english: bool = True, allow_browser_fallback: bool = True):  # noqa: ARG002
+    def get(self, url: str, force_english: bool = True):  # noqa: ARG002
         if "oos" in url:
             html = '<div class="message message-danger">Out of Stock</div>'
             final_url = url

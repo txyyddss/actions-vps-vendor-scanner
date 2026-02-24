@@ -72,8 +72,8 @@ def scan_whmcs_gids(
                 )
 
             future_map = {
-                # Keep browser fallback enabled for category scans on challenge-protected sites.
-                pool.submit(http_client.get, urljoin(base_url, f"cart.php?gid={gid}"), True, True): gid
+                # Use FlareSolverr to handle challenge-protected sites.
+                pool.submit(http_client.get, urljoin(base_url, f"cart.php?gid={gid}"), True): gid
                 for gid in batch_ids
             }
             responses_by_id: dict[int, Any] = {}
@@ -121,6 +121,7 @@ def scan_whmcs_gids(
                                     "platform": "WHMCS",
                                     "scan_type": "category_scanner",
                                     "source_priority": "category_scanner",
+                                    "gid": gid,
                                     "canonical_url": normalize_url(urljoin(response.final_url, plink), force_english=True),
                                     "source_url": response.requested_url,
                                     "stock_status": "unknown",

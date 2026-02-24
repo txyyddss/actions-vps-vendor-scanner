@@ -49,7 +49,7 @@ def check_stock(products: list[dict[str, Any]], http_client: HttpClient, max_wor
         """Executes _check logic."""
         product_url = item.get("canonical_url") or item.get("source_url")
         fallback_status = str(item.get("stock_status", "unknown"))
-        response = http_client.get(str(product_url), force_english=True, allow_browser_fallback=True)
+        response = http_client.get(str(product_url), force_english=True)
         if not response.ok:
             return {
                 "product_id": item.get("product_id"),

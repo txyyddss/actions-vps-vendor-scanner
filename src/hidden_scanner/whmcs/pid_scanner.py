@@ -82,8 +82,8 @@ def scan_whmcs_pids(
                 )
 
             future_map = {
-                # Keep browser fallback enabled for product scans on challenge-protected sites.
-                pool.submit(http_client.get, urljoin(base_url, f"cart.php?a=add&pid={pid}"), True, True): pid
+                # Use FlareSolverr to handle challenge-protected sites.
+                pool.submit(http_client.get, urljoin(base_url, f"cart.php?a=add&pid={pid}"), True): pid
                 for pid in batch_ids
             }
             responses_by_id: dict[int, Any] = {}

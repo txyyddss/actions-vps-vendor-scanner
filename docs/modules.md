@@ -21,5 +21,5 @@ Responsible for probing sequentially incrementing numerical IDs to find non-publ
 - `src.parsers.whmcs_parser` & `src.parsers.hostbill_parser`: Transforms HTML payloads into structured `ParsedItem` dataclasses containing names, cycles, locations, and precise stock status rules.
 
 ## HTTP & Misc
-- `src.misc.http_client`: The central `HttpClient` orchestrating retries, backoffs, and browser fallbacks.
+- `src.misc.http_client`: The central `HttpClient` orchestrating retries, backoffs, and flaresolverr configuration.
 - `src.misc.telegram_sender`: Safe chunked sender for Telegram messages guaranteeing limits are respected.

@@ -144,8 +144,8 @@ class LinkDiscoverer:
                         self.logger.debug("discoverer skip url=%s reason=%s", url, reason)
                         continue
                     visited.add(url)
-                    # Discoverer should allow full fallback chain for anti-bot protected pages.
-                    future_map[pool.submit(self.http_client.get, url, True, True)] = url
+                    # Discoverer should allow FlareSolverr fallback for anti-bot protected pages.
+                    future_map[pool.submit(self.http_client.get, url, True)] = url
 
                 processed = 0
                 total = len(future_map)

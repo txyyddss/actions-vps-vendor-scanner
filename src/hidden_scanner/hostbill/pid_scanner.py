@@ -82,8 +82,8 @@ def scan_hostbill_pids(
                 )
 
             future_map = {
-                # Keep browser fallback enabled for product scans on challenge-protected sites.
-                pool.submit(http_client.get, urljoin(base_url, f"index.php?/cart/&action=add&id={pid}"), True, True): pid
+                # Use FlareSolverr to handle challenge-protected sites.
+                pool.submit(http_client.get, urljoin(base_url, f"index.php?/cart/&action=add&id={pid}"), True): pid
                 for pid in batch_ids
             }
             responses_by_id: dict[int, Any] = {}
