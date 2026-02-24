@@ -115,3 +115,68 @@ def test_flaresolverr_retries_retriable_error_response(monkeypatch) -> None:
     result = client.get("https://target.example/store", domain="target.example")
     assert result.ok is True
     assert len(sleep_calls) == 1
+
+
+def test_flaresolverr_queue_guard_sleeps_when_depth_too_high(monkeypatch) -> None:
+    client = FlareSolverrClient(
+        "http://127.0.0.1:8191/v1",
+        queue_depth_threshold=5,
+        queue_depth_sleep_seconds=2.0,
+    )
+    with client._request_slot_lock:
+        client._active_request_slots = 6
+
+    sleep_calls: list[float] = []
+
+    def fake_sleep(seconds: float) -> None:
+        sleep_calls.append(seconds)
+        with client._request_slot_lock:
+            client._active_request_slots = 4
+
+    monkeypatch.setattr("src.misc.flaresolverr_client.time.sleep", fake_sleep)
+
+    client._acquire_request_slot()
+    with client._request_slot_lock:
+        active_after_acquire = client._active_request_slots
+    client._release_request_slot()
+    with client._request_slot_lock:
+        active_after_release = client._active_request_slots
+
+    assert sleep_calls == [2.0]
+    assert active_after_acquire == 5
+    assert active_after_release == 4
+
+
+def test_flaresolverr_retries_queue_depth_error_response(monkeypatch) -> None:
+    client = FlareSolverrClient(
+        "http://127.0.0.1:8191/v1",
+        retry_attempts=3,
+        retry_base_delay_seconds=0,
+        retry_max_delay_seconds=0,
+        retry_jitter_seconds=0,
+        queue_depth_threshold=5,
+        queue_depth_sleep_seconds=2.0,
+    )
+    monkeypatch.setattr(client, "_get_or_create_session", lambda _domain: "sess-1")
+
+    responses = [
+        {"status": "error", "message": "Task queue depth is 90"},
+        {
+            "status": "ok",
+            "message": "Challenge solved!",
+            "solution": {
+                "status": 200,
+                "url": "https://target.example/store",
+                "response": "<html>ok</html>",
+                "cookies": [],
+            },
+        },
+    ]
+
+    sleep_calls: list[float] = []
+    monkeypatch.setattr("src.misc.flaresolverr_client.time.sleep", lambda seconds: sleep_calls.append(seconds))
+    monkeypatch.setattr(client, "_post", lambda _payload: responses.pop(0))
+
+    result = client.get("https://target.example/store", domain="target.example")
+    assert result.ok is True
+    assert 2.0 in sleep_calls

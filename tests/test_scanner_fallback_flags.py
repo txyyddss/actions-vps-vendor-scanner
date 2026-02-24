@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor as RealThreadPoolExecutor
 from types import SimpleNamespace
+
+import pytest
 
 from src.discoverer.link_discoverer import LinkDiscoverer
 from src.hidden_scanner.hostbill.catid_scanner import scan_hostbill_catids
@@ -84,6 +87,34 @@ def test_whmcs_and_hostbill_scanners_use_browser_fallback(tmp_path) -> None:
 
     assert fake.calls
     assert all(call[2] is True for call in fake.calls)
+
+
+@pytest.mark.parametrize(
+    ("executor_target", "scanner"),
+    [
+        ("src.hidden_scanner.whmcs.gid_scanner.ThreadPoolExecutor", scan_whmcs_gids),
+        ("src.hidden_scanner.whmcs.pid_scanner.ThreadPoolExecutor", scan_whmcs_pids),
+        ("src.hidden_scanner.hostbill.catid_scanner.ThreadPoolExecutor", scan_hostbill_catids),
+        ("src.hidden_scanner.hostbill.pid_scanner.ThreadPoolExecutor", scan_hostbill_pids),
+    ],
+)
+def test_hidden_scanners_force_single_worker_per_site(tmp_path, monkeypatch, executor_target: str, scanner) -> None:
+    observed_max_workers: list[int | None] = []
+
+    class CapturingExecutor(RealThreadPoolExecutor):
+        def __init__(self, max_workers=None, *args, **kwargs):  # noqa: ANN001
+            observed_max_workers.append(max_workers)
+            super().__init__(max_workers=max_workers, *args, **kwargs)
+
+    monkeypatch.setattr(executor_target, CapturingExecutor)
+
+    fake = FakeHttpClient()
+    state_store = StateStore(tmp_path / "state.json")
+    config = _scanner_config()
+    config["scanner"]["max_workers"] = 12
+
+    scanner(_site("SingleWorker", "https://example.com/"), config, fake, state_store)
+    assert observed_max_workers == [1]
 
 
 def test_special_api_scanners_use_browser_fallback() -> None:

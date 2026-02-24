@@ -2,6 +2,7 @@ from __future__ import annotations
 """A client for FlareSolverr to bypass Cloudflare and other JS challenges."""
 
 import json
+import re
 import threading
 import time
 from dataclasses import dataclass
@@ -27,6 +28,8 @@ class FlareSolverrResult:
 
 class FlareSolverrClient:
     """Represents FlareSolverrClient."""
+    _QUEUE_DEPTH_PATTERN = re.compile(r"task queue depth is\s*(\d+)", re.IGNORECASE)
+
     def __init__(
         self,
         url: str,
@@ -36,6 +39,8 @@ class FlareSolverrClient:
         retry_base_delay_seconds: float = 2.0,
         retry_max_delay_seconds: float = 30.0,
         retry_jitter_seconds: float = 0.5,
+        queue_depth_threshold: int = 5,
+        queue_depth_sleep_seconds: float = 3.0,
     ) -> None:
         """Executes __init__ logic."""
         self.url = url.rstrip("/")
@@ -49,7 +54,43 @@ class FlareSolverrClient:
         )
         self._session_cache: dict[str, tuple[str, float]] = {}
         self._lock = threading.Lock()
+        self.queue_depth_threshold = max(1, int(queue_depth_threshold))
+        self.queue_depth_sleep_seconds = max(0.0, float(queue_depth_sleep_seconds))
+        self._request_slot_lock = threading.Lock()
+        self._active_request_slots = 0
         self.logger = get_logger("flaresolverr")
+
+    @classmethod
+    def _extract_queue_depth(cls, text: str) -> int | None:
+        """Extract queue depth from FlareSolverr/Waitress warning text, if present."""
+        match = cls._QUEUE_DEPTH_PATTERN.search(text)
+        if not match:
+            return None
+        try:
+            return int(match.group(1))
+        except ValueError:
+            return None
+
+    def _acquire_request_slot(self) -> None:
+        """Apply client-side queue-depth throttling before submitting a new FS task."""
+        while True:
+            with self._request_slot_lock:
+                depth_after_enqueue = self._active_request_slots + 1
+                if depth_after_enqueue <= self.queue_depth_threshold:
+                    self._active_request_slots = depth_after_enqueue
+                    return
+                current_depth = self._active_request_slots
+            self.logger.warning(
+                "Task queue depth is %s; sleeping %.1fs before FlareSolverr fallback",
+                current_depth,
+                self.queue_depth_sleep_seconds,
+            )
+            time.sleep(self.queue_depth_sleep_seconds)
+
+    def _release_request_slot(self) -> None:
+        """Release one previously acquired queue slot."""
+        with self._request_slot_lock:
+            self._active_request_slots = max(0, self._active_request_slots - 1)
 
     def _post(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Executes _post logic."""
@@ -96,6 +137,7 @@ class FlareSolverrClient:
             "connecterror",
             "readtimeout",
             "connecttimeout",
+            "task queue depth",
         )
         return any(marker in lower for marker in retriable_markers)
 
@@ -119,7 +161,11 @@ class FlareSolverrClient:
                 if proxy_url:
                     payload["proxy"] = {"url": proxy_url}
 
-                result = self._post(payload)
+                self._acquire_request_slot()
+                try:
+                    result = self._post(payload)
+                finally:
+                    self._release_request_slot()
                 if result.get("status") == "ok":
                     solution = result.get("solution", {})
                     return FlareSolverrResult(
@@ -132,6 +178,14 @@ class FlareSolverrClient:
                     )
 
                 message = str(result.get("message", "unknown-error"))
+                queue_depth = self._extract_queue_depth(message)
+                if queue_depth is not None and queue_depth > self.queue_depth_threshold:
+                    self.logger.warning(
+                        "FlareSolverr reported task queue depth %s; sleeping %.1fs before retry",
+                        queue_depth,
+                        self.queue_depth_sleep_seconds,
+                    )
+                    time.sleep(self.queue_depth_sleep_seconds)
                 is_retriable = self._is_retriable_error(message)
                 if is_retriable and attempt < max_attempts:
                     delay = self._retry_delay(attempt)
@@ -157,6 +211,14 @@ class FlareSolverrClient:
                 )
             except Exception as exc:  # noqa: BLE001
                 error_text = str(exc)
+                queue_depth = self._extract_queue_depth(error_text)
+                if queue_depth is not None and queue_depth > self.queue_depth_threshold:
+                    self.logger.warning(
+                        "FlareSolverr reported task queue depth %s; sleeping %.1fs before retry",
+                        queue_depth,
+                        self.queue_depth_sleep_seconds,
+                    )
+                    time.sleep(self.queue_depth_sleep_seconds)
                 is_retriable = self._is_retriable_error(error_text) or isinstance(
                     exc,
                     (

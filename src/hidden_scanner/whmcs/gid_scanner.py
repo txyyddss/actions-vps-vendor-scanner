@@ -38,7 +38,8 @@ def scan_whmcs_gids(
     )
     learned_high = int(site_state.get("whmcs_gid_highwater", 0))
     resume_start = max(0, learned_high - tail_window) if learned_high > 0 else 0
-    max_workers = min(int(scanner_cfg.get("max_workers", 10)), 12)
+    # Enforce one crawler worker per site; cross-site parallelism is handled by main_scanner.
+    max_workers = 1
     batch_size = int(scanner_cfg.get("scan_batch_size", max_workers * 3))
     planner = AdaptiveScanController(
         hard_max=hard_max,

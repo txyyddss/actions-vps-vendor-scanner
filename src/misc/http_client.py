@@ -82,6 +82,8 @@ class HttpClient:
             retry_base_delay_seconds=float(flaresolverr_cfg.get("retry_base_delay_seconds", 2.0)),
             retry_max_delay_seconds=float(flaresolverr_cfg.get("retry_max_delay_seconds", 30.0)),
             retry_jitter_seconds=float(flaresolverr_cfg.get("retry_jitter_seconds", 0.5)),
+            queue_depth_threshold=int(flaresolverr_cfg.get("queue_depth_threshold", 5)),
+            queue_depth_sleep_seconds=float(flaresolverr_cfg.get("queue_depth_sleep_seconds", 3.0)),
         )
         self.flaresolverr_enabled = bool(flaresolverr_cfg.get("enabled", True))
         self.cookie_reuse_enabled = bool(flaresolverr_cfg.get("reuse_cookies", True))

@@ -37,6 +37,8 @@
     "retry_base_delay_seconds": 2.0,
     "retry_max_delay_seconds": 30.0,
     "retry_jitter_seconds": 0.5,
+    "queue_depth_threshold": 5,
+    "queue_depth_sleep_seconds": 3.0,
     "reuse_cookies": true,
     "cookie_ttl_seconds": 1800
   },
