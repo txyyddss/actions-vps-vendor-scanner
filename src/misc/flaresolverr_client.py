@@ -79,10 +79,11 @@ class FlareSolverrClient:
                 if depth_after_enqueue <= self.queue_depth_threshold:
                     self._active_request_slots = depth_after_enqueue
                     return
-                current_depth = self._active_request_slots
-            self.logger.warning(
-                "Task queue depth is %s; sleeping %.1fs before FlareSolverr fallback",
-                current_depth,
+                current_in_flight = self._active_request_slots
+            self.logger.info(
+                "FlareSolverr local throttle in_flight=%s cap=%s; sleeping %.1fs before request",
+                current_in_flight,
+                self.queue_depth_threshold,
                 self.queue_depth_sleep_seconds,
             )
             time.sleep(self.queue_depth_sleep_seconds)
