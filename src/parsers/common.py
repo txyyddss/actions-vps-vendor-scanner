@@ -1,10 +1,12 @@
 from __future__ import annotations
+"""Defines common data structures and types for parser outputs."""
 
 from dataclasses import dataclass, field
 
 
 @dataclass(slots=True)
 class ParsedItem:
+    """Represents ParsedItem."""
     platform: str
     is_product: bool
     is_category: bool

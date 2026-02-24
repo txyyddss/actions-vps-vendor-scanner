@@ -1,4 +1,5 @@
 from __future__ import annotations
+"""A specialized HTML parser for extracting product details and stock status from HostBill pages."""
 
 import re
 
@@ -17,20 +18,24 @@ NON_PRODUCT_REDIRECT_MARKERS = ("/checkdomain/",)
 
 
 def _text(node: object) -> str:
+    """Executes _text logic."""
     return str(node.get_text(" ", strip=True)) if hasattr(node, "get_text") else ""
 
 
 def _extract_prices(text: str) -> list[str]:
+    """Executes _extract_prices logic."""
     return list(dict.fromkeys(re.findall(r"(?:[$€£¥]|HK\$)\s?[0-9][0-9,.]*\s?(?:USD|CAD|HKD)?", text)))
 
 
 def _extract_cycles(text: str) -> list[str]:
+    """Executes _extract_cycles logic."""
     cycle_tokens = ("monthly", "quarterly", "semi-annually", "annually", "biennially", "triennially")
     cycles = [token.title() for token in cycle_tokens if token in text.lower()]
     return list(dict.fromkeys(cycles))
 
 
 def _extract_product_links(soup: BeautifulSoup) -> list[str]:
+    """Executes _extract_product_links logic."""
     links: list[str] = []
 
     # HostBill frequently embeds product IDs inside forms.
@@ -49,6 +54,7 @@ def _extract_product_links(soup: BeautifulSoup) -> list[str]:
 
 
 def _extract_category_links(soup: BeautifulSoup) -> list[str]:
+    """Executes _extract_category_links logic."""
     links: list[str] = []
     for anchor in soup.select("a[href]"):
         href = str(anchor.get("href", ""))
@@ -61,6 +67,7 @@ def _extract_category_links(soup: BeautifulSoup) -> list[str]:
 
 
 def parse_hostbill_page(html: str, final_url: str) -> ParsedItem:
+    """Executes parse_hostbill_page logic."""
     soup = BeautifulSoup(html, "lxml")
     full_text = soup.get_text(" ", strip=True)
     lowered = full_text.lower()

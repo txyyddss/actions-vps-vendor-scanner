@@ -1,4 +1,5 @@
 from __future__ import annotations
+"""Handles deduplication and conflict-priority merging of products found via multiple crawl paths."""
 
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,10 +17,12 @@ SOURCE_PRIORITY = {
 
 
 def _source_weight(source: str) -> int:
+    """Executes _source_weight logic."""
     return SOURCE_PRIORITY.get(source, 0)
 
 
 def _sanitize_record(record: dict[str, Any]) -> dict[str, Any] | None:
+    """Executes _sanitize_record logic."""
     canonical_url = canonicalize_for_merge(str(record.get("canonical_url") or record.get("source_url") or ""))
     classification = classify_url(canonical_url)
     if classification.is_invalid_product_url:
@@ -57,6 +60,7 @@ def merge_records(
     category_records: list[dict[str, Any]],
     previous_products: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
+    """Executes merge_records logic."""
     logger = get_logger("data_merge")
     previous_by_url = {item.get("canonical_url"): item for item in (previous_products or [])}
     merged: dict[str, dict[str, Any]] = {}
@@ -94,6 +98,7 @@ def diff_products(
     old_products: list[dict[str, Any]],
     new_products: list[dict[str, Any]],
 ) -> tuple[list[str], list[str], list[str]]:
+    """Executes diff_products logic."""
     old_map = {item.get("canonical_url"): item for item in old_products}
     new_map = {item.get("canonical_url"): item for item in new_products}
 
@@ -110,6 +115,7 @@ def diff_products(
 
 
 def load_products(path: str = "data/products.json") -> list[dict[str, Any]]:
+    """Executes load_products logic."""
     if not Path(path).exists():
         return []
     payload = load_json(path)
@@ -117,6 +123,7 @@ def load_products(path: str = "data/products.json") -> list[dict[str, Any]]:
 
 
 def write_products(products: list[dict[str, Any]], run_id: str, path: str = "data/products.json") -> None:
+    """Executes write_products logic."""
     in_stock = sum(1 for item in products if item.get("stock_status") == "in_stock")
     out_of_stock = sum(1 for item in products if item.get("stock_status") == "out_of_stock")
     payload = {

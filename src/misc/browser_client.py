@@ -1,4 +1,5 @@
 from __future__ import annotations
+"""A Playwright-based client for fetching pages that require full browser execution."""
 
 from dataclasses import dataclass, field
 from typing import Any
@@ -15,6 +16,7 @@ except Exception:  # noqa: BLE001
 
 @dataclass(slots=True)
 class BrowserFetchResult:
+    """Represents BrowserFetchResult."""
     ok: bool
     status_code: int | None
     final_url: str
@@ -24,7 +26,9 @@ class BrowserFetchResult:
 
 
 class BrowserClient:
+    """Represents BrowserClient."""
     def __init__(self, enabled: bool, headless: bool = True, timeout_ms: int = 60000, wait_until: str = "networkidle") -> None:
+        """Executes __init__ logic."""
         self.enabled = enabled
         self.headless = headless
         self.timeout_ms = timeout_ms
@@ -32,6 +36,7 @@ class BrowserClient:
         self.logger = get_logger("browser_client")
 
     def get(self, url: str, proxy_url: str | None = None) -> BrowserFetchResult:
+        """Executes get logic."""
         if not self.enabled or sync_playwright is None:
             return BrowserFetchResult(ok=False, status_code=None, final_url=url, body="", error="playwright-disabled")
 

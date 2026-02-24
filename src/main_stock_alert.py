@@ -1,4 +1,5 @@
 from __future__ import annotations
+"""Periodic job to check stock statuses of all known products and send Telegram alerts for restocks."""
 
 import json
 from pathlib import Path
@@ -11,6 +12,7 @@ from src.others.stock_checker import check_stock, load_stock, merge_with_previou
 
 
 def main() -> None:
+    """Executes main logic."""
     config = load_config("config/config.json")
     setup_logging(
         level=str(config.get("logging", {}).get("level", "INFO")),

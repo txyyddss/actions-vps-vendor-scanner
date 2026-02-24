@@ -1,26 +1,29 @@
-# Architecture
+# Scanner Architecture
 
-This project monitors VPS products and stock status using a multi-stage scanner pipeline.
+This project is built around a multi-stage scanner pipeline designed to scale across dozens of VPS vendors safely and reliably.
 
-## Key components
+## Overall Pipeline
 
-- `src/main_scanner.py`: orchestrates discoverer/category/product scans and merge output.
-- `src/main_stock_alert.py`: checks existing product URLs and reports restocks.
-- `src/main_issue_processor.py`: handles issue form automation for site changes.
-- `src/misc/http_client.py`: tiered networking (direct HTTP, FlareSolverr, Playwright fallback).
-- `src/others/data_merge.py`: conflict-priority merge and diff logic.
-- `src/misc/dashboard_generator.py`: static cyberpunk dashboard builder.
+1. **Discovery Stage (`main_scanner.py --mode discoverer`)**
+   - Initiates a BFS (Breadth-First Search) URL crawler on enabled sites.
+   - Respects depth and page limits per site to avoid being trapped in infinite loops.
+   - Extracts product and category links to pass to the next stages.
 
-## Data flow
+2. **Category / Group Scan (`main_scanner.py --mode category`)**
+   - Scans incrementally for category IDs in WHMCS (`gid=...`) and HostBill (`cat_id=...`).
+   - Learns and saves highwater marks so future runs resume from near the last known ID.
 
-1. Scanner jobs discover category/product candidates.
-2. Product/category records are merged with source priority.
-3. `data/products.json` and `web/` are regenerated.
-4. Stock workflow checks product URLs and updates `data/stock.json`.
+3. **Product Scan (`main_scanner.py --mode product`)**
+   - Scans incrementally for product IDs.
+   - Applies similar adaptive limits driven by `AdaptiveScanController` to reduce time spent on inactive ranges.
 
-## Reliability controls
+4. **Data Merging (`main_scanner.py --mode merge`)**
+   - Combines output from all stages.
+   - Prioritizes higher-quality parses (e.g. `product_scanner` outputs > `discoverer` outputs).
+   - Resolves conflicts, retains semantic English names, and generates final static `products.json` file.
 
-- Retries with exponential backoff.
-- Per-domain rate limiting and cooldowns.
-- Circuit breaker for repeated domain failures.
-- Explicit stock evidence captured in each record.
+## Resilience and Bot Evasion
+
+- **Circuit Breaker**: Repeated 500s or timeouts open the circuit, preventing the scanner from hammering a broken vendor.
+- **Rate Limiting**: Configured to respect global QPS limits and per-domain limits.
+- **Tiered Fetching**: Starts with plain HTTPX, falls back to `FlareSolverr` for basic Cloudflare intercepts, and finally escalates to a full `Playwright` browser if the block persists.

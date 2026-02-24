@@ -1,4 +1,5 @@
 from __future__ import annotations
+"""Provides circuit breaking, rate limiting, and backoff policies for network requests."""
 
 import random
 import threading
@@ -13,12 +14,14 @@ RETRIABLE_STATUS_CODES: Final[set[int]] = {408, 425, 429, 500, 502, 503, 504}
 
 @dataclass(slots=True)
 class BackoffPolicy:
+    """Represents BackoffPolicy."""
     max_attempts: int = 3
     base_delay_seconds: float = 1.0
     max_delay_seconds: float = 30.0
     jitter_seconds: float = 0.5
 
     def delay_for_attempt(self, attempt: int) -> float:
+        """Executes delay_for_attempt logic."""
         exp_delay = min(self.max_delay_seconds, self.base_delay_seconds * (2 ** max(0, attempt - 1)))
         jitter = random.uniform(0, self.jitter_seconds)
         return exp_delay + jitter
@@ -28,12 +31,14 @@ class CircuitBreaker:
     """Simple per-domain circuit breaker to avoid hammering unhealthy targets."""
 
     def __init__(self, failure_threshold: int = 5, cooldown_seconds: int = 180) -> None:
+        """Executes __init__ logic."""
         self.failure_threshold = failure_threshold
         self.cooldown_seconds = cooldown_seconds
         self._state: dict[str, tuple[int, float]] = {}
         self._lock = threading.Lock()
 
     def allow(self, domain: str) -> bool:
+        """Executes allow logic."""
         with self._lock:
             failures, opened_at = self._state.get(domain, (0, 0.0))
             if failures < self.failure_threshold:
@@ -44,10 +49,12 @@ class CircuitBreaker:
             return False
 
     def record_success(self, domain: str) -> None:
+        """Executes record_success logic."""
         with self._lock:
             self._state[domain] = (0, 0.0)
 
     def record_failure(self, domain: str) -> None:
+        """Executes record_failure logic."""
         with self._lock:
             failures, opened_at = self._state.get(domain, (0, 0.0))
             failures += 1
@@ -60,6 +67,7 @@ class DomainRateLimiter:
     """Token-bucket-like limiter using minimum spacing between domain calls."""
 
     def __init__(self, global_qps: float = 4.0, per_domain_qps: float = 1.0) -> None:
+        """Executes __init__ logic."""
         self.global_interval = 1.0 / max(0.01, global_qps)
         self.per_domain_interval = 1.0 / max(0.01, per_domain_qps)
         self._lock = threading.Lock()
@@ -68,6 +76,7 @@ class DomainRateLimiter:
         self._cooldown_until: dict[str, float] = {}
 
     def wait_for_slot(self, url: str) -> None:
+        """Executes wait_for_slot logic."""
         domain = extract_domain(url)
         while True:
             wait_seconds = 0.0
@@ -93,11 +102,13 @@ class DomainRateLimiter:
             time.sleep(min(wait_seconds, 0.5))
 
     def apply_cooldown(self, url: str, seconds: float) -> None:
+        """Executes apply_cooldown logic."""
         domain = extract_domain(url)
         with self._lock:
             self._cooldown_until[domain] = max(self._cooldown_until.get(domain, 0.0), time.time() + seconds)
 
 
 def should_retry_status(status_code: int) -> bool:
+    """Executes should_retry_status logic."""
     return status_code in RETRIABLE_STATUS_CODES
 

@@ -1,4 +1,5 @@
 from __future__ import annotations
+"""Main orchestration script for discovering links and scanning products across all configured vendors."""
 
 import argparse
 import hashlib
@@ -27,10 +28,12 @@ TMP_DIR = Path("data/tmp")
 
 
 def _now_run_id() -> str:
+    """Executes _now_run_id logic."""
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
 def _load_tmp(name: str) -> list[dict[str, Any]]:
+    """Executes _load_tmp logic."""
     path = TMP_DIR / f"{name}.json"
     if not path.exists():
         return []
@@ -38,11 +41,13 @@ def _load_tmp(name: str) -> list[dict[str, Any]]:
 
 
 def _save_tmp(name: str, payload: list[dict[str, Any]]) -> None:
+    """Executes _save_tmp logic."""
     TMP_DIR.mkdir(parents=True, exist_ok=True)
     (TMP_DIR / f"{name}.json").write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def _discover_mode(sites: list[dict[str, Any]], config: dict[str, Any], http_client: HttpClient) -> list[dict[str, Any]]:
+    """Executes _discover_mode logic."""
     scanner_cfg = config.get("scanner", {})
     logger = get_logger("main_scanner")
     discover_site_workers = max(1, int(scanner_cfg.get("discoverer_max_workers", scanner_cfg.get("max_workers", 12))))
@@ -68,27 +73,67 @@ def _discover_mode(sites: list[dict[str, Any]], config: dict[str, Any], http_cli
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("discoverer failed site=%s error=%s", site.get("name", ""), exc)
                     continue
-                for url in result.product_candidates:
-                    records.append(
-                        {
-                            "site": site["name"],
-                            "platform": site.get("category", ""),
-                            "scan_type": "discoverer",
-                            "source_priority": "discoverer",
-                            "canonical_url": url,
-                            "source_url": url,
-                            "stock_status": "unknown",
-                            "name_raw": "",
-                            "name_en": "",
-                            "description_raw": "",
-                            "description_en": "",
-                            "cycles": [],
-                            "locations_raw": [],
-                            "locations_en": [],
-                            "price_raw": "",
-                            "evidence": ["discoverer-candidate"],
-                        }
-                    )
+                # Respect product_scanner / category_scanner switches even for discoverer output.
+                emit_products = site.get("product_scanner", True)
+                emit_categories = site.get("category_scanner", True)
+                if emit_products:
+                    for url in result.product_candidates:
+                        records.append(
+                            {
+                                "site": site["name"],
+                                "platform": site.get("category", ""),
+                                "scan_type": "discoverer",
+                                "source_priority": "discoverer",
+                                "canonical_url": url,
+                                "source_url": url,
+                                "stock_status": "unknown",
+                                "name_raw": "",
+                                "name_en": "",
+                                "description_raw": "",
+                                "description_en": "",
+                                "cycles": [],
+                                "locations_raw": [],
+                                "locations_en": [],
+                                "price_raw": "",
+                                "evidence": ["discoverer-candidate"],
+                            }
+                        )
+                else:
+                    if result.product_candidates:
+                        logger.info(
+                            "discoverer skipping %s product candidates for site=%s (product_scanner=false)",
+                            len(result.product_candidates),
+                            site.get("name", ""),
+                        )
+                if emit_categories:
+                    for url in result.category_candidates:
+                        records.append(
+                            {
+                                "site": site["name"],
+                                "platform": site.get("category", ""),
+                                "scan_type": "discoverer",
+                                "source_priority": "discoverer",
+                                "canonical_url": url,
+                                "source_url": url,
+                                "stock_status": "unknown",
+                                "name_raw": "",
+                                "name_en": "",
+                                "description_raw": "",
+                                "description_en": "",
+                                "cycles": [],
+                                "locations_raw": [],
+                                "locations_en": [],
+                                "price_raw": "",
+                                "evidence": ["discoverer-category-candidate"],
+                            }
+                        )
+                else:
+                    if result.category_candidates:
+                        logger.info(
+                            "discoverer skipping %s category candidates for site=%s (category_scanner=false)",
+                            len(result.category_candidates),
+                            site.get("name", ""),
+                        )
     _save_tmp("discoverer", records)
     return records
 
@@ -99,6 +144,7 @@ def _category_mode(
     http_client: HttpClient,
     state_store: StateStore,
 ) -> list[dict[str, Any]]:
+    """Executes _category_mode logic."""
     scanner_cfg = config.get("scanner", {})
     targets = [site for site in sites if site.get("enabled") and site.get("category_scanner")]
     rows: list[dict[str, Any]] = []
@@ -128,6 +174,7 @@ def _product_mode(
     http_client: HttpClient,
     state_store: StateStore,
 ) -> list[dict[str, Any]]:
+    """Executes _product_mode logic."""
     scanner_cfg = config.get("scanner", {})
     targets = [site for site in sites if site.get("enabled")]
     rows: list[dict[str, Any]] = []
@@ -135,14 +182,15 @@ def _product_mode(
     with ThreadPoolExecutor(max_workers=min(8, int(scanner_cfg.get("max_workers", 12)))) as pool:
         future_map = {}
         for site in targets:
-            if not site.get("product_scanner"):
-                continue
             special_crawler = str(site.get("special_crawler", "")).strip().lower()
             category = str(site.get("category", "")).lower()
+            # Special crawlers always run; product_scanner flag only gates WHMCS/HostBill PID scans.
             if special_crawler == "acck_api":
                 future_map[pool.submit(scan_acck_api, site, http_client)] = site["name"]
             elif special_crawler == "akile_api":
                 future_map[pool.submit(scan_akile_api, site, http_client)] = site["name"]
+            elif not site.get("product_scanner"):
+                continue
             elif category == "whmcs":
                 future_map[pool.submit(scan_whmcs_pids, site, config, http_client, state_store)] = site["name"]
             elif category == "hostbill":
@@ -160,6 +208,7 @@ def _product_mode(
 
 
 def _attach_product_ids(products: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Executes _attach_product_ids logic."""
     for item in products:
         key = item.get("canonical_url", "")
         item["product_id"] = hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
@@ -167,6 +216,7 @@ def _attach_product_ids(products: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _merge_mode(config: dict[str, Any]) -> list[dict[str, Any]]:
+    """Executes _merge_mode logic."""
     discoverer_rows = _load_tmp("discoverer")
     category_rows = _load_tmp("category")
     product_rows = _load_tmp("product")
@@ -202,11 +252,12 @@ def _merge_mode(config: dict[str, Any]) -> list[dict[str, Any]]:
         },
         "products": merged,
     }
-    generate_dashboard(products_payload, output_dir="web")
+    generate_dashboard(products_payload, output_dir="web", dashboard_cfg=config.get("dashboard", {}))
     return merged
 
 
 def main() -> None:
+    """Executes main logic."""
     parser = argparse.ArgumentParser(description="VPS scanner orchestrator")
     parser.add_argument("--mode", required=True, choices=["discoverer", "category", "product", "merge", "all"])
     parser.add_argument("--site", default="", help="optional site name filter")

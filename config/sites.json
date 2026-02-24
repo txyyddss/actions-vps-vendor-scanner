@@ -8,7 +8,7 @@
         "discoverer": true,
         "category": "WHMCS",
         "special_crawler": "",
-        "product_scanner": true,
+        "product_scanner": false,
         "category_scanner": true,
         "scan_bounds": {}
       },
@@ -19,7 +19,7 @@
         "discoverer": true,
         "category": "WHMCS",
         "special_crawler": "",
-        "product_scanner": true,
+        "product_scanner": false,
         "category_scanner": true,
         "scan_bounds": {}
       },
@@ -74,7 +74,7 @@
         "discoverer": true,
         "category": "WHMCS",
         "special_crawler": "",
-        "product_scanner": true,
+        "product_scanner": false,
         "category_scanner": true,
         "scan_bounds": {}
       },
@@ -85,7 +85,7 @@
         "discoverer": true,
         "category": "WHMCS",
         "special_crawler": "",
-        "product_scanner": true,
+        "product_scanner": false,
         "category_scanner": true,
         "scan_bounds": {}
       },
@@ -129,7 +129,7 @@
         "discoverer": true,
         "category": "WHMCS",
         "special_crawler": "",
-        "product_scanner": true,
+        "product_scanner": false,
         "category_scanner": true,
         "scan_bounds": {}
       },
@@ -162,8 +162,8 @@
         "discoverer": true,
         "category": "WHMCS",
         "special_crawler": "",
-        "product_scanner": false,
-        "category_scanner": true,
+        "product_scanner": true,
+        "category_scanner": false,
         "scan_bounds": {}
       },
       {

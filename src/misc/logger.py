@@ -1,4 +1,5 @@
 from __future__ import annotations
+"""Configures standardized application logging with optional JSON formatting."""
 
 import json
 import logging
@@ -10,6 +11,7 @@ class _JsonFormatter(logging.Formatter):
     """Formats logs as single-line JSON objects for CI readability."""
 
     def format(self, record: logging.LogRecord) -> str:
+        """Executes format logic."""
         payload: dict[str, Any] = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "level": record.levelname,
@@ -22,6 +24,7 @@ class _JsonFormatter(logging.Formatter):
 
 
 def setup_logging(level: str = "INFO", json_logs: bool = False) -> None:
+    """Executes setup_logging logic."""
     root = logging.getLogger()
     root.setLevel(level.upper())
     root.handlers.clear()
@@ -40,5 +43,6 @@ def setup_logging(level: str = "INFO", json_logs: bool = False) -> None:
 
 
 def get_logger(name: str) -> logging.Logger:
+    """Executes get_logger logic."""
     return logging.getLogger(name)
 

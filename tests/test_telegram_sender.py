@@ -17,7 +17,7 @@ def test_telegram_sender_prefers_env_credentials(monkeypatch) -> None:
     assert sender.config.enabled is True
     assert sender.config.bot_token == "env-token"
     assert sender.config.chat_id == "env-chat"
-    assert sender.config.topic_id == "12345"
+    assert sender.config.topic_id == 12345
 
 
 def test_telegram_sender_disables_when_missing_credentials(monkeypatch) -> None:

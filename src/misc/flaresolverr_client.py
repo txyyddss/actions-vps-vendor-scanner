@@ -1,4 +1,5 @@
 from __future__ import annotations
+"""A client for FlareSolverr to bypass Cloudflare and other JS challenges."""
 
 import json
 import threading
@@ -13,6 +14,7 @@ from src.misc.logger import get_logger
 
 @dataclass(slots=True)
 class FlareSolverrResult:
+    """Represents FlareSolverrResult."""
     ok: bool
     status_code: int | None
     final_url: str
@@ -23,7 +25,9 @@ class FlareSolverrResult:
 
 
 class FlareSolverrClient:
+    """Represents FlareSolverrClient."""
     def __init__(self, url: str, max_timeout_ms: int = 180000, session_ttl_minutes: int = 30) -> None:
+        """Executes __init__ logic."""
         self.url = url.rstrip("/")
         self.max_timeout_ms = max_timeout_ms
         self.session_ttl_seconds = session_ttl_minutes * 60
@@ -32,12 +36,14 @@ class FlareSolverrClient:
         self.logger = get_logger("flaresolverr")
 
     def _post(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Executes _post logic."""
         with httpx.Client(timeout=240) as client:
             response = client.post(self.url, json=payload)
             response.raise_for_status()
             return response.json()
 
     def _create_session(self) -> str:
+        """Executes _create_session logic."""
         result = self._post({"cmd": "sessions.create"})
         session_id = result.get("session", "")
         if not session_id:
@@ -45,6 +51,7 @@ class FlareSolverrClient:
         return session_id
 
     def _get_or_create_session(self, domain: str) -> str:
+        """Executes _get_or_create_session logic."""
         with self._lock:
             cached = self._session_cache.get(domain)
             if cached and (time.time() - cached[1]) < self.session_ttl_seconds:
@@ -55,6 +62,7 @@ class FlareSolverrClient:
             return session_id
 
     def get(self, url: str, domain: str, proxy_url: str | None = None) -> FlareSolverrResult:
+        """Executes get logic."""
         session = self._get_or_create_session(domain)
         payload: dict[str, Any] = {
             "cmd": "request.get",

@@ -1,4 +1,5 @@
 from __future__ import annotations
+"""Site-specific parser and fetcher for the Akile API vendor."""
 
 import json
 import re
@@ -14,6 +15,7 @@ SHOP_BASE = "https://akile.io/shop/server"
 
 
 def _parse_json_payload(raw_text: str) -> dict[str, Any]:
+    """Executes _parse_json_payload logic."""
     text = raw_text.strip()
     if text.startswith("<"):
         match = re.search(r"<pre[^>]*>(.*?)</pre>", text, re.IGNORECASE | re.DOTALL)
@@ -24,6 +26,7 @@ def _parse_json_payload(raw_text: str) -> dict[str, Any]:
 
 
 def _build_cycles(price_datas: Any) -> tuple[list[str], str]:
+    """Executes _build_cycles logic."""
     if not isinstance(price_datas, dict):
         return [], ""
     cycles: list[str] = []
@@ -36,6 +39,7 @@ def _build_cycles(price_datas: Any) -> tuple[list[str], str]:
 
 
 def scan_akile_api(site: dict[str, Any], http_client: HttpClient) -> list[dict[str, Any]]:
+    """Executes scan_akile_api logic."""
     logger = get_logger("akile_api")
     now = datetime.now(timezone.utc).isoformat()
     # Keep browser fallback enabled to survive anti-bot pages wrapping API responses.

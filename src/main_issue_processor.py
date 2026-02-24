@@ -1,4 +1,5 @@
 from __future__ import annotations
+"""Processes GitHub issues to add, edit, or delete monitored sites automatically."""
 
 import argparse
 import copy
@@ -24,6 +25,7 @@ TELEGRAM_CHANNEL_URL = "https://t.me/tx_stock_monitor"
 
 
 def _parse_markdown_form(body: str) -> dict[str, str]:
+    """Executes _parse_markdown_form logic."""
     fields: dict[str, str] = {}
     current_key = ""
     buffer: list[str] = []
@@ -44,6 +46,7 @@ def _parse_markdown_form(body: str) -> dict[str, str]:
 
 
 def _parse_positive_int(value: str) -> int | None:
+    """Executes _parse_positive_int logic."""
     match = re.search(r"\d+", value or "")
     if not match:
         return None
@@ -52,6 +55,7 @@ def _parse_positive_int(value: str) -> int | None:
 
 
 def _parse_bool(value: str, default: bool = True) -> bool:
+    """Executes _parse_bool logic."""
     normalized = str(value or "").strip().lower()
     if normalized in {"true", "yes", "1", "on"}:
         return True
@@ -61,6 +65,7 @@ def _parse_bool(value: str, default: bool = True) -> bool:
 
 
 def _validate_site_payload(fields: dict[str, str]) -> tuple[bool, str]:
+    """Executes _validate_site_payload logic."""
     action = fields.get("action", "").strip().lower()
     if action not in {"add", "edit", "delete"}:
         return False, "Action must be add, edit, or delete."
@@ -84,6 +89,7 @@ def _validate_site_payload(fields: dict[str, str]) -> tuple[bool, str]:
 
 
 def _build_site_entry(fields: dict[str, str]) -> dict[str, Any]:
+    """Executes _build_site_entry logic."""
     return normalize_site_entry(
         {
             "enabled": _parse_bool(fields.get("enabled", "true"), True),
@@ -105,6 +111,7 @@ def _github_api(
     token: str,
     payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """Executes _github_api logic."""
     headers = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github+json",
@@ -123,6 +130,7 @@ def _comment_and_maybe_close(
     message: str,
     close_invalid: bool,
 ) -> None:
+    """Executes _comment_and_maybe_close logic."""
     token = os.getenv("GITHUB_TOKEN", "")
     repo = os.getenv("GITHUB_REPOSITORY", "")
     logger = get_logger("issue_processor")
@@ -143,6 +151,7 @@ def _comment_and_maybe_close(
 
 
 def _build_validation_config(config: dict[str, Any], expected: int) -> dict[str, Any]:
+    """Executes _build_validation_config logic."""
     test_config = copy.deepcopy(config)
     scanner_cfg = test_config.setdefault("scanner", {})
     defaults = scanner_cfg.setdefault("default_scan_bounds", {})
@@ -157,6 +166,7 @@ def _build_validation_config(config: dict[str, Any], expected: int) -> dict[str,
 
 
 def _run_site_product_count_test(site_entry: dict[str, Any], expected: int, config: dict[str, Any]) -> tuple[int, str]:
+    """Executes _run_site_product_count_test logic."""
     test_config = _build_validation_config(config, expected)
     http_client = HttpClient(test_config)
     temp_state = StateStore(Path("data/tmp/issue_validation_state.json"))
@@ -180,6 +190,7 @@ def _run_site_product_count_test(site_entry: dict[str, Any], expected: int, conf
 
 
 def _apply_site_change(action: str, site_name: str, new_site: dict[str, Any], sites_path: str = "config/sites.json") -> tuple[bool, str]:
+    """Executes _apply_site_change logic."""
     payload = load_json(sites_path)
     sites = payload.setdefault("sites", {}).setdefault("site", [])
     existing_idx = next((idx for idx, site in enumerate(sites) if str(site.get("name", "")).strip() == site_name), -1)
@@ -207,6 +218,7 @@ def _apply_site_change(action: str, site_name: str, new_site: dict[str, Any], si
 
 
 def main() -> None:
+    """Executes main logic."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--issue-number", type=int, default=0)
     args = parser.parse_args()

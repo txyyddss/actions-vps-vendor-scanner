@@ -1,4 +1,5 @@
 from __future__ import annotations
+"""Normalizes, classifies, and filters URLs to ensure consistent merging and processing."""
 
 import re
 from dataclasses import dataclass
@@ -48,12 +49,14 @@ ROUTE_QUERY_KEYS = {"rp"}
 
 @dataclass(slots=True)
 class UrlClassification:
+    """Represents UrlClassification."""
     url: str
     is_invalid_product_url: bool
     reason: str
 
 
 def _normalize_query_key(key: str) -> str:
+    """Executes _normalize_query_key logic."""
     normalized = key.strip().lower().lstrip("&")
     while normalized.startswith("amp;"):
         normalized = normalized[4:]
@@ -61,6 +64,7 @@ def _normalize_query_key(key: str) -> str:
 
 
 def normalize_url(url: str, base_url: str | None = None, force_english: bool = False) -> str:
+    """Executes normalize_url logic."""
     if base_url:
         url = urljoin(base_url, url)
 
@@ -92,19 +96,23 @@ def normalize_url(url: str, base_url: str | None = None, force_english: bool = F
 
 
 def canonicalize_for_merge(url: str) -> str:
+    """Executes canonicalize_for_merge logic."""
     # Merge key should be stable across runs and keep semantic query keys (pid, gid, id, rp, cat_id).
     return normalize_url(url=url, base_url=None, force_english=False).lower()
 
 
 def extract_domain(url: str) -> str:
+    """Executes extract_domain logic."""
     return urlparse(url).netloc.lower()
 
 
 def is_same_domain(url: str, base_url: str) -> bool:
+    """Executes is_same_domain logic."""
     return extract_domain(url) == extract_domain(base_url)
 
 
 def classify_url(url: str) -> UrlClassification:
+    """Executes classify_url logic."""
     normalized = normalize_url(url)
     lowered = normalized.lower()
     parsed = urlparse(lowered)

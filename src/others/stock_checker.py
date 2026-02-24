@@ -1,4 +1,5 @@
 from __future__ import annotations
+"""Validates live stock status for products against their latest webpage state."""
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
@@ -13,6 +14,7 @@ from src.parsers.whmcs_parser import parse_whmcs_page
 
 
 def _status_from_parser(platform: str, html: str, final_url: str, fallback: str) -> tuple[str, list[str]]:
+    """Executes _status_from_parser logic."""
     if platform == "WHMCS":
         parsed = parse_whmcs_page(html, final_url)
         evidence = parsed.evidence
@@ -38,11 +40,13 @@ def _status_from_parser(platform: str, html: str, final_url: str, fallback: str)
 
 
 def check_stock(products: list[dict[str, Any]], http_client: HttpClient, max_workers: int = 12) -> list[dict[str, Any]]:
+    """Executes check_stock logic."""
     logger = get_logger("stock_checker")
     now = datetime.now(timezone.utc).isoformat()
     rows: list[dict[str, Any]] = []
 
     def _check(item: dict[str, Any]) -> dict[str, Any]:
+        """Executes _check logic."""
         product_url = item.get("canonical_url") or item.get("source_url")
         fallback_status = str(item.get("stock_status", "unknown"))
         response = http_client.get(str(product_url), force_english=True, allow_browser_fallback=True)
@@ -66,7 +70,18 @@ def check_stock(products: list[dict[str, Any]], http_client: HttpClient, max_wor
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         future_map = {pool.submit(_check, item): item for item in products}
         for future in as_completed(future_map):
-            rows.append(future.result())
+            try:
+                rows.append(future.result())
+            except Exception as exc:  # noqa: BLE001
+                item = future_map[future]
+                logger.warning("stock check failed url=%s error=%s", item.get("canonical_url"), exc)
+                rows.append({
+                    "product_id": item.get("product_id"),
+                    "canonical_url": item.get("canonical_url"),
+                    "status": str(item.get("stock_status", "unknown")),
+                    "checked_at": now,
+                    "evidence": [f"check-error:{exc}"],
+                })
 
     logger.info("checked stock rows=%s", len(rows))
     return rows
@@ -76,6 +91,7 @@ def merge_with_previous(
     current_items: list[dict[str, Any]],
     previous_items: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
+    """Executes merge_with_previous logic."""
     previous_map = {item.get("canonical_url"): item for item in previous_items}
     merged: list[dict[str, Any]] = []
     for item in current_items:
@@ -96,6 +112,7 @@ def merge_with_previous(
 
 
 def load_stock(path: str = "data/stock.json") -> list[dict[str, Any]]:
+    """Executes load_stock logic."""
     if not Path(path).exists():
         return []
     payload = load_json(path)
@@ -103,6 +120,7 @@ def load_stock(path: str = "data/stock.json") -> list[dict[str, Any]]:
 
 
 def write_stock(items: list[dict[str, Any]], run_id: str, path: str = "data/stock.json") -> None:
+    """Executes write_stock logic."""
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "run_id": run_id,

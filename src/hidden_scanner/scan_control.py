@@ -1,4 +1,5 @@
 from __future__ import annotations
+"""Provides adaptive rate-limiting and boundary control for hidden scanners."""
 
 from dataclasses import dataclass, field
 
@@ -21,6 +22,7 @@ class AdaptiveScanController:
     stop_reason: str = field(init=False, default="")
 
     def __post_init__(self) -> None:
+        """Executes __post_init__ logic."""
         self.hard_max = max(0, int(self.hard_max))
         self.initial_floor = max(0, int(self.initial_floor))
         self.tail_window = max(1, int(self.tail_window))
@@ -33,6 +35,7 @@ class AdaptiveScanController:
         self.cursor = self.start_id
 
     def next_batch(self, batch_size: int) -> list[int]:
+        """Executes next_batch logic."""
         if self.should_stop or self.cursor > self.current_max:
             return []
         size = max(1, int(batch_size))
@@ -42,6 +45,7 @@ class AdaptiveScanController:
         return list(range(start, end + 1))
 
     def mark(self, item_id: int, is_new_discovery: bool) -> bool:
+        """Executes mark logic."""
         self.last_processed_id = max(self.last_processed_id, item_id)
 
         if is_new_discovery:
@@ -69,4 +73,5 @@ class AdaptiveScanController:
 
     @property
     def should_stop(self) -> bool:
+        """Executes should_stop logic."""
         return bool(self.stop_reason)

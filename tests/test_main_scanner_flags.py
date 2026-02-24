@@ -14,7 +14,8 @@ class DummyHttpClient:
     pass
 
 
-def test_product_mode_skips_special_crawler_when_product_scanner_disabled(monkeypatch, tmp_path: Path) -> None:
+def test_product_mode_runs_special_crawler_even_when_product_scanner_disabled(monkeypatch, tmp_path: Path) -> None:
+    """Special crawlers (acck_api, akile_api) should run regardless of product_scanner flag."""
     calls: list[str] = []
     monkeypatch.setattr("src.main_scanner._save_tmp", lambda name, payload: None)  # noqa: ARG005
 
@@ -38,8 +39,8 @@ def test_product_mode_skips_special_crawler_when_product_scanner_disabled(monkey
     config = {"scanner": {"max_workers": 1}}
     rows = _product_mode(sites, config, DummyHttpClient(), StateStore(tmp_path / "state.json"))
 
-    assert rows == []
-    assert calls == []
+    assert len(rows) == 1
+    assert calls == ["ACCK"]
 
 
 def test_product_mode_runs_special_crawler_when_product_scanner_enabled(monkeypatch, tmp_path: Path) -> None:
@@ -119,3 +120,52 @@ def test_discover_mode_runs_sites_in_parallel_and_each_site_single_worker(monkey
     assert len(rows) == 3
     assert observed_max_workers == [1]
     assert max_active >= 2
+
+
+def test_discover_mode_runs_even_when_both_outputs_disabled(monkeypatch) -> None:
+    monkeypatch.setattr("src.main_scanner._save_tmp", lambda name, payload: None)  # noqa: ARG005
+
+    called_sites: list[str] = []
+
+    class FakeDiscoverer:
+        def __init__(self, http_client, max_depth, max_pages, max_workers):  # noqa: ANN001, ARG002
+            pass
+
+        def discover(self, site_name: str, base_url: str):  # noqa: ANN001
+            called_sites.append(site_name)
+            return SimpleNamespace(
+                site_name=site_name,
+                base_url=base_url,
+                visited_urls=[],
+                product_candidates=[f"{base_url}product"],
+                category_candidates=[f"{base_url}category"],
+            )
+
+    monkeypatch.setattr("src.main_scanner.LinkDiscoverer", FakeDiscoverer)
+
+    config = {"scanner": {"discoverer_max_workers": 2, "discoverer_max_depth": 1, "discoverer_max_pages": 10}}
+    sites = [
+        {
+            "enabled": True,
+            "discoverer": True,
+            "name": "SkipMe",
+            "url": "https://skip.example/",
+            "category": "WHMCS",
+            "product_scanner": False,
+            "category_scanner": False,
+        },
+        {
+            "enabled": True,
+            "discoverer": True,
+            "name": "KeepMe",
+            "url": "https://keep.example/",
+            "category": "WHMCS",
+            "product_scanner": True,
+            "category_scanner": False,
+        },
+    ]
+
+    rows = _discover_mode(sites, config, DummyHttpClient())
+
+    assert set(called_sites) == {"SkipMe", "KeepMe"}
+    assert len(rows) == 1

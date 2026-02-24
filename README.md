@@ -1,95 +1,104 @@
-# actions-vps-vendor-scanner
+# Actions VPS Vendor Scanner
 
-GitHub Actions powered product scanner and stock monitor for WHMCS, HostBill, and special API vendors.
+A highly resilient, automated product scanner and stock monitor for VPS vendors, specifically designed to handle WHMCS, HostBill, and custom API-driven sites. This project is intended to be run via GitHub Actions, providing frequent stock check updates and newly discovered plan alerts via Telegram.
 
-## Features
+## Key Features
 
-- Parallel scanner jobs (discoverer, category scanner, product scanner)
-- Merge + washing pipeline with URL-key conflict priority
-- Stock alert job every 15 minutes
-- FlareSolverr + socks5 proxy + Playwright fallback chain
-- Rate-limit safe retries and per-domain cooldowns
-- Telegram alerts for product diff and restocks
-- Static cyberpunk dashboard generation (`web/`)
-- Automatic issue form processing for site add/edit/delete
-- Pull request processor with tests and validation comment (no auto-approval)
+- **Multi-Stage Scanning Pipeline**: Separates the crawling into multiple stages (Discoverer, Category Scanner, Product Scanner, and Merger) to allow efficient parallelization and debugging.
+- **Adaptive Hidden Product Discovery**: Implements intelligent boundary-based ID enumeration (gids, pids, cat_ids) to discover hidden plans and categories, automatically storing highwater marks to reduce future scan times.
+- **Tiered Evasion Network Stack**: Uses a multi-layered fetch approach: First HTTPX direct fetch, fallback to FlareSolverr for basic JS challenges, and Playwright for advanced anti-bot mitigations.
+- **Robust Anti-Flap Data Merging**: Prioritizes stock status and data fidelity intelligently via a conflict-resolution merge system based on `source_priority`. Retains semantic keys (prices, cycles, locations, English/Raw names) cleanly.
+- **Circuit Breakers & Rate Limits**: Ensures the crawler acts like a good citizen, throttling requests natively and cutting off unresponsive domains before they exhaust action minutes.
+- **Actionable Telegram Alerts**: Chunked, detailed notifications highlighting exactly what changed since the last stock run, with Telegram-friendly formatting.
+- **Static Dashboard Output**: Emits a beautifully crafted, static HTML+JS dashboard showing live inventory, which can be effortlessly hosted on GitHub Pages.
+- **Automated Issue Processing**: Allows community members or operators to seamlessly add, remove, or modify site targets by simply filing specialized GitHub Issues. No manual JSON editing required.
 
-## Quick start
+## Getting Started
+
+### Prerequisites
+
+You need Python 3.9+ to effectively run the scripts. We strongly recommend using a virtual environment.
 
 ```bash
+python -m venv venv
+# Linux/macOS
+source venv/bin/activate
+# Windows
+.\venv\Scripts\activate
+
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-Edit config files:
+### Configuration Files
 
-- `config/config.json`
-- `config/sites.json`
+- `config/config.json`: Contains engine settings, API urls, Playwright settings, rate limit bounds, crawler limits, and log configurations.
+- `config/sites.json`: Source of truth for all monitored vendor sites. Contains URLs, category, and enabled capabilities for each.
 
-Run scanner stages locally:
+### Running the Pipeline Locally
+
+The tool supports a module-based execution which closely mimics the GitHub Actions pipeline:
 
 ```bash
+# 1. Broadly discover product pages via BFS crawling
 python -m src.main_scanner --mode discoverer
+
+# 2. Iterate dynamically generated category IDs
 python -m src.main_scanner --mode category
+
+# 3. Aggressively enumerate product IDs based on historical highwater marks
 python -m src.main_scanner --mode product
+
+# 4. Filter, compile, and wash discovered lists down to a single master file
 python -m src.main_scanner --mode merge
 ```
 
-Or run end-to-end:
-
+Or you can trigger the entire end-to-end operation with a single argument:
 ```bash
 python -m src.main_scanner --mode all
 ```
 
-Run stock alert:
-
+To frequently poll for active restocks in existing high-priority products without rediscovering:
 ```bash
 python -m src.main_stock_alert
 ```
 
-Run dashboard generation:
-
+To update the `web/index.html` static site data dynamically:
 ```bash
 python -m src.main_dashboard
 ```
 
-Run issue processor locally (with event payload env):
-
+To test issue-based additions visually:
 ```bash
+# Provide a stubbed Payload to your environment to see it tested
 python -m src.main_issue_processor --issue-number 123
 ```
 
-GitHub repository secrets required for Telegram:
+### GitHub Variables & Secrets
 
-- `TELEGRAM_BOT_TOKEN`
-- `TELEGRAM_CHAT_ID`
-- `TELEGRAM_TOPIC_ID` (optional, only for forum-style groups; leave unset for channels)
+For a full cloud deployment, set up the following secrets in your GitHub repository:
+- `TELEGRAM_BOT_TOKEN`: Your API token generated via BotFather.
+- `TELEGRAM_CHAT_ID`: The recipient channel or chat.
+- `TELEGRAM_TOPIC_ID`: Optional thread ID for forum-structured telegram groups.
 
-Telegram channel: https://t.me/tx_stock_monitor
+Subscribe to real-time events via our community channel: [TX Stock Monitor](https://t.me/tx_stock_monitor)
 
-Run tests:
+## Development & Testing
+
+Run all unit tests to validate schema regressions, HTTP behavior, and config sanity. Since live-site scraping inherently breaks logic due to 403s/timeouts, tests are typically mocked.
 
 ```bash
 pytest
 ```
 
-## Output files
+## Directory Structure
+- `src/`: Core Python modules for crawlers, parsers, scanners, and helpers.
+- `config/`: Configuration parameters and site manifest.
+- `data/`: Ephemeral output products and historical tracking files (`products.json`, `stock.json`, `state.json`).
+- `docs/`: Technical and API documentation.
+- `tests/`: Automated test cases ensuring regressions do not persist into mainline.
+- `web/`: Contains static dashboard template assets for final build consumption.
 
-- Product catalog: `data/products.json`
-- Stock snapshot: `data/stock.json`
-- Learned scan state: `data/state.json`
-- Static dashboard: `web/index.html`
+## Usage Caution
 
-## GitHub workflows
-
-- `.github/workflows/scanner.yml`
-- `.github/workflows/stock-alert.yml`
-- `.github/workflows/issue-processor.yml`
-- `.github/workflows/pr-processor.yml`
-
-## Notes
-
-- Scanner keeps both raw and English-normalized fields.
-- URLs are normalized and washed before persistence.
-- Playwright fallback is lazy and only used when needed.
-- Site add/edit issue requests require `Expected Product Number`; processor runs a live scan and rejects the request if scanned products are below that threshold.
+Use responsibly. Aggressive crawling can lead to IP bans or disruptions for smaller vendors. By default, `config.json` enforces fair use limits but always verify your specific environment logic.

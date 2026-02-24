@@ -1,4 +1,5 @@
 from __future__ import annotations
+"""A specialized HTML parser for extracting product details and stock status from WHMCS pages."""
 
 import re
 from urllib.parse import parse_qsl, urlparse
@@ -28,10 +29,12 @@ GENERIC_HEADINGS = {
 
 
 def _text(node: object) -> str:
+    """Executes _text logic."""
     return str(node.get_text(" ", strip=True)) if hasattr(node, "get_text") else ""
 
 
 def _pick_name(soup: BeautifulSoup) -> str:
+    """Executes _pick_name logic."""
     candidates: list[str] = []
     selectors = [
         ".product-title",
@@ -55,10 +58,12 @@ def _pick_name(soup: BeautifulSoup) -> str:
 
 
 def _extract_prices(text: str) -> list[str]:
+    """Executes _extract_prices logic."""
     return list(dict.fromkeys(re.findall(r"(?:[$€£¥]|HK\$)\s?[0-9][0-9,.]*\s?(?:USD|CAD|HKD)?", text)))
 
 
 def _extract_cycles(soup: BeautifulSoup) -> list[str]:
+    """Executes _extract_cycles logic."""
     cycle_tokens = ("monthly", "quarterly", "semi-annually", "annually", "biennially", "triennially")
     cycles: list[str] = []
     for node in soup.select("#sectionCycles, .check-cycle, #inputBillingcycle, select[name*=billing], select[name*=cycle]"):
@@ -70,6 +75,7 @@ def _extract_cycles(soup: BeautifulSoup) -> list[str]:
 
 
 def _extract_locations(soup: BeautifulSoup) -> list[str]:
+    """Executes _extract_locations logic."""
     location_hints = ("location", "datacenter", "region", "country", "zone", "节点", "地区", "機房")
     locations: list[str] = []
 
@@ -87,6 +93,7 @@ def _extract_locations(soup: BeautifulSoup) -> list[str]:
 
 
 def _extract_links(soup: BeautifulSoup) -> tuple[list[str], list[str]]:
+    """Executes _extract_links logic."""
     product_links: list[str] = []
     category_links: list[str] = []
     for anchor in soup.select("a[href]"):
@@ -109,6 +116,7 @@ def _extract_links(soup: BeautifulSoup) -> tuple[list[str], list[str]]:
 
 
 def _store_segments_from_url(url: str) -> list[str]:
+    """Executes _store_segments_from_url logic."""
     parsed = urlparse(url)
     candidates = [parsed.path]
     for key, value in parse_qsl(parsed.query, keep_blank_values=True):
@@ -127,6 +135,7 @@ def _store_segments_from_url(url: str) -> list[str]:
 
 
 def parse_whmcs_page(html: str, final_url: str) -> ParsedItem:
+    """Executes parse_whmcs_page logic."""
     soup = BeautifulSoup(html, "lxml")
     full_text = soup.get_text(" ", strip=True)
     lowered = full_text.lower()

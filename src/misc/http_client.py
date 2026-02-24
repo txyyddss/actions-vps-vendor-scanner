@@ -1,4 +1,5 @@
 from __future__ import annotations
+"""A resilient HTTP fetcher with tiered fallbacks: direct HTTP, FlareSolverr, and Browser."""
 
 import threading
 import time
@@ -10,12 +11,13 @@ import httpx
 from src.misc.browser_client import BrowserClient
 from src.misc.flaresolverr_client import FlareSolverrClient
 from src.misc.logger import get_logger
-from src.misc.retry_rate_limit import BackoffPolicy, CircuitBreaker, DomainRateLimiter, should_retry_status
+from src.misc.retry_rate_limit import RETRIABLE_STATUS_CODES, BackoffPolicy, CircuitBreaker, DomainRateLimiter, should_retry_status
 from src.misc.url_normalizer import extract_domain, normalize_url
 
 
 @dataclass(slots=True)
 class FetchResult:
+    """Represents FetchResult."""
     ok: bool
     requested_url: str
     final_url: str
@@ -31,6 +33,7 @@ class HttpClient:
     """Tiered fetcher: direct HTTP -> FlareSolverr -> Playwright."""
 
     def __init__(self, config: dict[str, Any]) -> None:
+        """Executes __init__ logic."""
         self.config = config
         self.logger = get_logger("http_client")
 
@@ -43,6 +46,7 @@ class HttpClient:
         self.timeout = float(http_cfg.get("timeout_seconds", 35))
         self.follow_redirects = bool(http_cfg.get("follow_redirects", True))
         self.verify_ssl = bool(http_cfg.get("verify_ssl", True))
+        self.http2 = bool(http_cfg.get("http2", False))
         self.user_agent = http_cfg.get("user_agent", "Mozilla/5.0")
         self.accept_language = http_cfg.get("accept_language", "en-US,en;q=0.9")
 
@@ -52,6 +56,12 @@ class HttpClient:
             max_delay_seconds=float(retry_cfg.get("max_delay_seconds", 30)),
             jitter_seconds=float(retry_cfg.get("jitter_seconds", 0.4)),
         )
+
+        configured_retry_codes = retry_cfg.get("retry_status_codes")
+        if isinstance(configured_retry_codes, list):
+            self.retry_status_codes: set[int] = {int(c) for c in configured_retry_codes}
+        else:
+            self.retry_status_codes = set(RETRIABLE_STATUS_CODES)
 
         self.default_cooldown_seconds = float(rate_cfg.get("default_cooldown_seconds", 45))
         self.ratelimit_cooldown_seconds = float(rate_cfg.get("ratelimit_cooldown_seconds", 90))
@@ -92,6 +102,7 @@ class HttpClient:
 
     @staticmethod
     def _cookie_domain_matches(request_domain: str, cookie_domain: str) -> bool:
+        """Executes _cookie_domain_matches logic."""
         normalized_cookie_domain = cookie_domain.strip().lstrip(".").lower()
         if not normalized_cookie_domain:
             return True
@@ -99,6 +110,7 @@ class HttpClient:
         return request_lower == normalized_cookie_domain or request_lower.endswith(f".{normalized_cookie_domain}")
 
     def _get_cached_cookie_header(self, domain: str) -> str | None:
+        """Executes _get_cached_cookie_header logic."""
         if not self.cookie_reuse_enabled:
             return None
 
@@ -114,10 +126,12 @@ class HttpClient:
             return "; ".join(f"{name}={value}" for name, value in sorted(cookies.items()))
 
     def _clear_cached_cookies(self, domain: str) -> None:
+        """Executes _clear_cached_cookies logic."""
         with self._cookie_lock:
             self._cookies_by_domain.pop(domain, None)
 
     def _store_cookies(self, domain: str, cookies: list[dict[str, Any]]) -> None:
+        """Executes _store_cookies logic."""
         if not self.cookie_reuse_enabled or not cookies:
             return
 
@@ -161,6 +175,7 @@ class HttpClient:
 
     @staticmethod
     def _response_cookies(response: httpx.Response) -> list[dict[str, Any]]:
+        """Executes _response_cookies logic."""
         cookies: list[dict[str, Any]] = []
         for cookie in response.cookies.jar:
             cookies.append(
@@ -175,6 +190,7 @@ class HttpClient:
 
     @staticmethod
     def _is_cloudflare_like(status_code: int | None, text: str, headers: dict[str, str] | None = None) -> bool:
+        """Executes _is_cloudflare_like logic."""
         lower = text.lower()
         header_map = {str(k).lower(): str(v).lower() for k, v in (headers or {}).items()}
         markers = (
@@ -202,6 +218,7 @@ class HttpClient:
         return False
 
     def _direct_get(self, url: str, proxy_url: str | None = None, cookie_header: str | None = None) -> FetchResult:
+        """Executes _direct_get logic."""
         start = time.perf_counter()
         headers = {"User-Agent": self.user_agent, "Accept-Language": self.accept_language}
         if cookie_header:
@@ -211,6 +228,7 @@ class HttpClient:
                 "timeout": self.timeout,
                 "follow_redirects": self.follow_redirects,
                 "verify": self.verify_ssl,
+                "http2": self.http2,
                 "headers": headers,
             }
             if proxy_url:
@@ -254,6 +272,7 @@ class HttpClient:
         allow_browser_fallback: bool = True,
         proxy_url: str | None = None,
     ) -> FetchResult:
+        """Executes get logic."""
         normalized_url = normalize_url(url, force_english=force_english)
         domain = extract_domain(normalized_url)
         active_proxy = proxy_url or self.default_proxy_url or None
@@ -355,7 +374,7 @@ class HttpClient:
                 last_error = browser.error or last_error
 
             # Retry when direct result indicates transient failure.
-            if direct.status_code and should_retry_status(direct.status_code):
+            if direct.status_code and direct.status_code in self.retry_status_codes:
                 self.rate_limiter.apply_cooldown(normalized_url, self.default_cooldown_seconds)
             delay = self.backoff.delay_for_attempt(attempt)
             time.sleep(delay)

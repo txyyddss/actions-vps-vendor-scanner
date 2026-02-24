@@ -1,4 +1,5 @@
 from __future__ import annotations
+"""Performs BFS crawling to discover product and category links from vendor sites."""
 
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -14,6 +15,7 @@ from src.misc.url_normalizer import is_same_domain, normalize_url, should_skip_d
 
 @dataclass(slots=True)
 class DiscoverResult:
+    """Represents DiscoverResult."""
     site_name: str
     base_url: str
     visited_urls: list[str]
@@ -22,7 +24,9 @@ class DiscoverResult:
 
 
 class LinkDiscoverer:
+    """Represents LinkDiscoverer."""
     def __init__(self, http_client: HttpClient, max_depth: int = 3, max_pages: int = 500, max_workers: int = 8) -> None:
+        """Executes __init__ logic."""
         self.http_client = http_client
         self.max_depth = max_depth
         self.max_pages = max_pages
@@ -31,6 +35,7 @@ class LinkDiscoverer:
 
     @staticmethod
     def _seed_urls(root: str) -> set[str]:
+        """Executes _seed_urls logic."""
         # Seed multiple likely catalog entry points so login-redirect roots do not end discovery early.
         candidates = {
             root,
@@ -47,6 +52,7 @@ class LinkDiscoverer:
 
     @staticmethod
     def _extract_links(html: str, base_url: str) -> set[str]:
+        """Executes _extract_links logic."""
         soup = BeautifulSoup(html, "lxml")
         links: set[str] = set()
 
@@ -73,6 +79,7 @@ class LinkDiscoverer:
 
     @staticmethod
     def _split_candidates(urls: set[str]) -> tuple[set[str], set[str]]:
+        """Executes _split_candidates logic."""
         product_candidates: set[str] = set()
         category_candidates: set[str] = set()
 
@@ -105,14 +112,20 @@ class LinkDiscoverer:
         return product_candidates, category_candidates
 
     def discover(self, site_name: str, base_url: str) -> DiscoverResult:
+        """Executes discover logic."""
         root = normalize_url(base_url)
         visited: set[str] = set()
         current_layer: set[str] = {root}
         product_candidates: set[str] = set()
         category_candidates: set[str] = set()
+        stop_reason = "max-depth-reached"
 
         for depth in range(self.max_depth + 1):
-            if not current_layer or len(visited) >= self.max_pages:
+            if not current_layer:
+                stop_reason = "frontier-empty"
+                break
+            if len(visited) >= self.max_pages:
+                stop_reason = f"max-pages:{self.max_pages}"
                 break
 
             next_layer: set[str] = set()
@@ -186,6 +199,18 @@ class LinkDiscoverer:
             )
             current_layer = next_layer
 
+            if len(visited) >= self.max_pages:
+                stop_reason = f"max-pages:{self.max_pages}"
+                break
+
+        self.logger.info(
+            "discoverer done site=%s visited=%s products=%s categories=%s stop=%s",
+            site_name,
+            len(visited),
+            len(product_candidates),
+            len(category_candidates),
+            stop_reason,
+        )
         return DiscoverResult(
             site_name=site_name,
             base_url=root,

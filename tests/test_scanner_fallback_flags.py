@@ -146,7 +146,7 @@ def test_whmcs_pid_scanner_resumes_from_highwater_tail(tmp_path) -> None:
             "scan_batch_size": 1,
             "initial_scan_floor": 0,
             "stop_tail_window": 10,
-            "stop_inactive_streak": 8,
+            "stop_inactive_streak_product": 8,
             "default_scan_bounds": {
                 "whmcs_gid_max": 0,
                 "whmcs_pid_max": 300,
@@ -162,3 +162,34 @@ def test_whmcs_pid_scanner_resumes_from_highwater_tail(tmp_path) -> None:
     assert fake.calls
     first_url, _, _ = fake.calls[0]
     assert "pid=110" in first_url
+
+
+def test_whmcs_scanners_use_split_inactive_streak_limits(tmp_path) -> None:
+    state_store = StateStore(tmp_path / "state.json")
+    config = {
+        "scanner": {
+            "max_workers": 1,
+            "scan_batch_size": 1,
+            "initial_scan_floor": 0,
+            "stop_tail_window": 200,
+            "stop_inactive_streak_category": 20,
+            "stop_inactive_streak_product": 60,
+            "default_scan_bounds": {
+                "whmcs_gid_max": 300,
+                "whmcs_pid_max": 300,
+                "hostbill_catid_max": 0,
+                "hostbill_pid_max": 0,
+            },
+        }
+    }
+    site = _site("SplitWHMCS", "https://example.com/")
+    site["scan_bounds"]["whmcs_gid_max"] = 300
+    site["scan_bounds"]["whmcs_pid_max"] = 300
+
+    category_client = FakeHttpClient()
+    scan_whmcs_gids(site, config, category_client, state_store)
+    assert len(category_client.calls) == 20
+
+    product_client = FakeHttpClient()
+    scan_whmcs_pids(site, config, product_client, state_store)
+    assert len(product_client.calls) == 60

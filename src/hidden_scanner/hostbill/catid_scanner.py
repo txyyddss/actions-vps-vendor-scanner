@@ -1,4 +1,5 @@
 from __future__ import annotations
+"""Scans HostBill instances for hidden categories using incremental IDs."""
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
@@ -18,6 +19,7 @@ def scan_hostbill_catids(
     http_client: HttpClient,
     state_store: StateStore,
 ) -> list[dict[str, Any]]:
+    """Executes scan_hostbill_catids logic."""
     logger = get_logger("hostbill_catid_scanner")
     site_name = site["name"]
     base_url = site["url"]
@@ -28,7 +30,12 @@ def scan_hostbill_catids(
     hard_max = int(site.get("scan_bounds", {}).get("hostbill_catid_max", defaults.get("hostbill_catid_max", 400)))
     initial_floor = int(scanner_cfg.get("initial_scan_floor", 80))
     tail_window = int(scanner_cfg.get("stop_tail_window", 60))
-    inactive_streak_limit = int(scanner_cfg.get("stop_inactive_streak", max(40, tail_window)))
+    inactive_streak_limit = int(
+        scanner_cfg.get(
+            "stop_inactive_streak_category",
+            scanner_cfg.get("stop_inactive_streak", max(40, tail_window)),
+        )
+    )
     learned_high = int(site_state.get("hostbill_catid_highwater", 0))
     resume_start = max(0, learned_high - tail_window) if learned_high > 0 else 0
     max_workers = min(int(scanner_cfg.get("max_workers", 10)), 16)

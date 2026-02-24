@@ -32,7 +32,9 @@
     "enabled": true,
     "url": "http://127.0.0.1:8191/v1",
     "max_timeout_ms": 180000,
-    "session_ttl_minutes": 30
+    "session_ttl_minutes": 30,
+    "reuse_cookies": true,
+    "cookie_ttl_seconds": 1800
   },
   "playwright": {
     "enabled": false,
@@ -42,8 +44,7 @@
   },
   "proxy": {
     "enabled": false,
-    "url": "",
-    "allow_flaresolverr_proxy": true
+    "url": ""
   },
   "scanner": {
     "max_workers": 12,
@@ -52,7 +53,8 @@
     "discoverer_max_depth": 3,
     "discoverer_max_pages": 500,
     "stop_tail_window": 60,
-    "stop_inactive_streak": 60,
+    "stop_inactive_streak_category": 20,
+    "stop_inactive_streak_product": 60,
     "initial_scan_floor": 80,
     "default_scan_bounds": {
       "whmcs_gid_max": 800,
@@ -78,7 +80,6 @@
   },
   "logging": {
     "level": "INFO",
-    "json_logs": false,
-    "verbose_http": true
+    "json_logs": false
   }
 }

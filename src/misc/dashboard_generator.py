@@ -1,4 +1,5 @@
 from __future__ import annotations
+"""Templates and outputs the static asset files for the web dashboard."""
 
 import json
 from datetime import datetime, timezone
@@ -13,15 +14,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Aggregate Buying Dashboard</title>
+  <title>__TITLE__</title>
   <link rel="stylesheet" href="assets/style.css">
 </head>
-<body data-theme="dark">
+<body data-theme="__THEME__">
   <div class="grid-bg"></div>
   <main class="page">
     <header class="hero">
       <div>
-        <h1>Aggregate Buying Dashboard</h1>
+        <h1>__TITLE__</h1>
         <p>Live VPS inventory from WHMCS, HostBill, and API-driven vendors.</p>
       </div>
       <div class="hero-actions">
@@ -35,11 +36,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <thead>
           <tr>
             <th data-sort="site">Site</th>
-            <th data-sort="name">Product</th>
+            <th data-sort="name_en">Product</th>
             <th data-sort="platform">Platform</th>
-            <th data-sort="status">Status</th>
-            <th data-sort="price">Price</th>
-            <th data-sort="updated">Updated</th>
+            <th data-sort="stock_status">Status</th>
+            <th data-sort="price_raw">Price</th>
+            <th data-sort="last_seen_at">Updated</th>
             <th>Buy</th>
           </tr>
         </thead>
@@ -213,6 +214,7 @@ function esc(str) {
 
 function renderStats() {
   const statsEl = document.getElementById("stats");
+  if (!dashboard.show_stats) { statsEl.style.display = "none"; return; }
   const cards = [
     { label: "Total Products", value: dashboard.stats.total_products },
     { label: "In Stock", value: dashboard.stats.in_stock },
@@ -283,12 +285,22 @@ renderUpdated();
 """
 
 
-def generate_dashboard(products_payload: dict[str, Any], output_dir: str = "web") -> None:
+def generate_dashboard(
+    products_payload: dict[str, Any],
+    output_dir: str = "web",
+    dashboard_cfg: dict[str, Any] | None = None,
+) -> None:
+    """Executes generate_dashboard logic."""
     logger = get_logger("dashboard_generator")
+    cfg = dashboard_cfg or {}
     out = Path(output_dir)
     assets = out / "assets"
     out.mkdir(parents=True, exist_ok=True)
     assets.mkdir(parents=True, exist_ok=True)
+
+    title = str(cfg.get("title", "Aggregate Buying Dashboard"))
+    theme = str(cfg.get("default_theme", "dark"))
+    show_stats = bool(cfg.get("show_stats", True))
 
     products = list(products_payload.get("products", []))
     stats = dict(products_payload.get("stats", {}))
@@ -298,12 +310,15 @@ def generate_dashboard(products_payload: dict[str, Any], output_dir: str = "web"
     data = {
         "generated_at": generated_at,
         "stats": stats,
+        "show_stats": show_stats,
         "products": products,
     }
     raw_json = json.dumps(data, ensure_ascii=False)
     # Escape sequences that could break out of the <script> tag to prevent XSS.
     safe_json = raw_json.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
     html = HTML_TEMPLATE.replace("__DATA__", safe_json)
+    html = html.replace("__TITLE__", title.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+    html = html.replace("__THEME__", theme if theme in {"dark", "light"} else "dark")
     (out / "index.html").write_text(html, encoding="utf-8")
     (assets / "style.css").write_text(CSS_TEMPLATE, encoding="utf-8")
     (assets / "app.js").write_text(APP_JS_TEMPLATE, encoding="utf-8")

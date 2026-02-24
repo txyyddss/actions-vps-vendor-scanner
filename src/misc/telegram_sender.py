@@ -1,4 +1,5 @@
 from __future__ import annotations
+"""Handles formatting and sending notifications to Telegram channels."""
 
 import os
 import time
@@ -16,6 +17,7 @@ MIN_SEND_INTERVAL = 1.5  # seconds between sends to avoid per-chat rate limit
 
 
 def _escape(text: str) -> str:
+    """Executes _escape logic."""
     # Conservative escaping for Telegram Markdown mode.
     return (
         text.replace("\\", "\\\\")
@@ -31,26 +33,35 @@ def _escape(text: str) -> str:
 
 @dataclass(slots=True)
 class TelegramConfig:
+    """Represents TelegramConfig."""
     enabled: bool
     bot_token: str
     chat_id: str
-    topic_id: str | None = None
+    topic_id: int | None = None
     tone: str = "professional"
 
 
-def _normalize_topic_id(value: str) -> str | None:
+def _normalize_topic_id(value: str) -> int | None:
+    """Executes _normalize_topic_id logic."""
     raw = (value or "").strip()
     # Telegram message_thread_id is an integer and only needed for forum-style groups.
     if raw.isdigit() and int(raw) > 0:
-        return raw
+        return int(raw)
     return None
 
 
 class TelegramSender:
+    """Represents TelegramSender."""
     def __init__(self, cfg: dict[str, Any]) -> None:
-        env_bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-        env_chat_id = os.getenv("TELEGRAM_CHAT_ID", "").strip()
-        env_topic_id = os.getenv("TELEGRAM_TOPIC_ID", "").strip()
+        """Executes __init__ logic."""
+        # Allow config to override which env var names to read.
+        bot_token_env = str(cfg.get("bot_token_env", "TELEGRAM_BOT_TOKEN"))
+        chat_id_env = str(cfg.get("chat_id_env", "TELEGRAM_CHAT_ID"))
+        topic_id_env = str(cfg.get("topic_id_env", "TELEGRAM_TOPIC_ID"))
+
+        env_bot_token = os.getenv(bot_token_env, "").strip()
+        env_chat_id = os.getenv(chat_id_env, "").strip()
+        env_topic_id = os.getenv(topic_id_env, "").strip()
 
         configured_enabled = bool(cfg.get("enabled", False))
         bot_token = env_bot_token or str(cfg.get("bot_token", "")).strip()
@@ -76,6 +87,7 @@ class TelegramSender:
 
     @property
     def _api_url(self) -> str:
+        """Executes _api_url logic."""
         return f"https://api.telegram.org/bot{self.config.bot_token}/sendMessage"
 
     def _throttle(self) -> None:
@@ -85,6 +97,7 @@ class TelegramSender:
             time.sleep(MIN_SEND_INTERVAL - elapsed)
 
     def _send(self, text: str) -> bool:
+        """Executes _send logic."""
         if not self.config.enabled:
             self.logger.info("Telegram disabled, skipping message:\n%s", text)
             return False
@@ -200,6 +213,7 @@ class TelegramSender:
         return all_ok
 
     def send_product_changes(self, new_urls: list[str], deleted_urls: list[str]) -> bool:
+        """Executes send_product_changes logic."""
         lines = [
             "**Stop scrolling: product catalog changed.**",
             "",
@@ -222,6 +236,7 @@ class TelegramSender:
         return self._send_chunked(lines, header_lines=8)
 
     def send_run_stats(self, title: str, stats: dict[str, Any]) -> bool:
+        """Executes send_run_stats logic."""
         lines = [
             f"**{_escape(title)}**",
             "",
@@ -240,6 +255,7 @@ class TelegramSender:
         return self._send("\n".join(lines))
 
     def send_restock_alerts(self, restocked_urls: list[str]) -> bool:
+        """Executes send_restock_alerts logic."""
         if not restocked_urls:
             return False
         lines = [
