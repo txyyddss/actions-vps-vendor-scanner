@@ -8,7 +8,17 @@ from bs4 import BeautifulSoup
 
 from src.parsers.common import ParsedItem
 
-OOS_MARKERS = (
+import json
+from pathlib import Path
+
+_parser_cfg = {}
+try:
+    with Path("config/config.json").open("r", encoding="utf-8-sig") as _f:
+        _parser_cfg = json.load(_f).get("parsers", {})
+except Exception:
+    pass
+
+OOS_MARKERS = tuple(_parser_cfg.get("oos_markers", (
     "out of stock",
     "sold out",
     "currently unavailable",
@@ -17,7 +27,7 @@ OOS_MARKERS = (
     "缺货中",
     "無庫存",
     "无库存",
-)
+)))
 
 GENERIC_HEADINGS = {
     "configure",
@@ -30,7 +40,7 @@ GENERIC_HEADINGS = {
 
 def _text(node: object) -> str:
     """Executes _text logic."""
-    return str(node.get_text(" ", strip=True)) if hasattr(node, "get_text") else ""
+    return str(node.get_text("\n", strip=True)) if hasattr(node, "get_text") else ""
 
 
 def _pick_name(soup: BeautifulSoup) -> str:
@@ -172,19 +182,20 @@ def parse_whmcs_page(html: str, final_url: str) -> ParsedItem:
     if "message-danger" in html.lower():
         evidence.append("message-danger")
 
+    # Extract the name from url if there's no name for the category scanner
+    if not name_raw and store_segments:
+        name_raw = store_segments[-1]
+
     return ParsedItem(
         platform="WHMCS",
         is_product=is_product,
         is_category=is_category,
         in_stock=in_stock,
         name_raw=name_raw,
-        name_en=name_raw,
         description_raw=description_raw,
-        description_en=description_raw,
         price_raw=", ".join(prices),
         cycles=cycles,
         locations_raw=locations,
-        locations_en=locations,
         evidence=evidence,
         product_links=product_links,
         category_links=category_links,

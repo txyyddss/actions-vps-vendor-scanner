@@ -21,7 +21,8 @@ from src.others.state_store import StateStore
 from src.site_specific.acck_api import scan_acck_api
 from src.site_specific.akile_api import scan_akile_api
 
-TELEGRAM_CHANNEL_URL = "https://t.me/tx_stock_monitor"
+_GLOBAL_CONFIG = load_config("config/config.json")
+TELEGRAM_CHANNEL_URL = _GLOBAL_CONFIG.get("telegram", {}).get("channel_url", "https://t.me/tx_stock_monitor")
 
 
 def _parse_markdown_form(body: str) -> dict[str, str]:

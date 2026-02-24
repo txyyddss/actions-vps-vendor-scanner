@@ -7,19 +7,29 @@ from bs4 import BeautifulSoup
 
 from src.parsers.common import ParsedItem
 
-OOS_MARKERS = (
+import json
+from pathlib import Path
+
+_parser_cfg = {}
+try:
+    with Path("config/config.json").open("r", encoding="utf-8-sig") as _f:
+        _parser_cfg = json.load(_f).get("parsers", {})
+except Exception:
+    pass
+
+OOS_MARKERS = tuple(_parser_cfg.get("oos_markers", (
     "out of stock",
     "currently unavailable",
     "unavailable",
     "no services yet",
-)
+)))
 
 NON_PRODUCT_REDIRECT_MARKERS = ("/checkdomain/",)
 
 
 def _text(node: object) -> str:
     """Executes _text logic."""
-    return str(node.get_text(" ", strip=True)) if hasattr(node, "get_text") else ""
+    return str(node.get_text("\n", strip=True)) if hasattr(node, "get_text") else ""
 
 
 def _extract_prices(text: str) -> list[str]:
@@ -134,13 +144,10 @@ def parse_hostbill_page(html: str, final_url: str) -> ParsedItem:
         is_category=is_category,
         in_stock=in_stock,
         name_raw=name_raw,
-        name_en=name_raw,
         description_raw=description_raw,
-        description_en=description_raw,
         price_raw=", ".join(_extract_prices(full_text)),
         cycles=_extract_cycles(full_text),
         locations_raw=locations,
-        locations_en=locations,
         evidence=evidence,
         product_links=_extract_product_links(soup),
         category_links=_extract_category_links(soup),

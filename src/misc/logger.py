@@ -40,6 +40,8 @@ def setup_logging(level: str = "INFO", json_logs: bool = False) -> None:
             )
         )
     root.addHandler(handler)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 
 def get_logger(name: str) -> logging.Logger:

@@ -13,30 +13,30 @@ from src.parsers.hostbill_parser import parse_hostbill_page
 from src.parsers.whmcs_parser import parse_whmcs_page
 
 
-def _status_from_parser(platform: str, html: str, final_url: str, fallback: str) -> tuple[str, list[str]]:
+def _status_from_parser(platform: str, html: str, final_url: str, fallback: str) -> tuple[str, list[str], list[str], list[str], str]:
     """Executes _status_from_parser logic."""
     if platform == "WHMCS":
         parsed = parse_whmcs_page(html, final_url)
         evidence = parsed.evidence
         if parsed.in_stock is True:
-            return "in_stock", evidence
+            return "in_stock", evidence, parsed.cycles, parsed.locations_raw, parsed.price_raw
         if parsed.in_stock is False:
-            return "out_of_stock", evidence
-        return fallback, evidence
+            return "out_of_stock", evidence, parsed.cycles, parsed.locations_raw, parsed.price_raw
+        return fallback, evidence, parsed.cycles, parsed.locations_raw, parsed.price_raw
 
     if platform == "HostBill":
         parsed = parse_hostbill_page(html, final_url)
         evidence = parsed.evidence
         if parsed.in_stock is True:
-            return "in_stock", evidence
+            return "in_stock", evidence, parsed.cycles, parsed.locations_raw, parsed.price_raw
         if parsed.in_stock is False:
-            return "out_of_stock", evidence
-        return fallback, evidence
+            return "out_of_stock", evidence, parsed.cycles, parsed.locations_raw, parsed.price_raw
+        return fallback, evidence, parsed.cycles, parsed.locations_raw, parsed.price_raw
 
     lowered = html.lower()
     if any(token in lowered for token in ("out of stock", "currently unavailable", "sold out", "缺貨中", "缺货中")):
-        return "out_of_stock", ["generic-oos-marker"]
-    return fallback, ["special-fallback"]
+        return "out_of_stock", ["generic-oos-marker"], [], [], ""
+    return fallback, ["special-fallback"], [], [], ""
 
 
 def check_stock(products: list[dict[str, Any]], http_client: HttpClient, max_workers: int = 12) -> list[dict[str, Any]]:
@@ -58,12 +58,15 @@ def check_stock(products: list[dict[str, Any]], http_client: HttpClient, max_wor
                 "checked_at": now,
                 "evidence": [f"fetch-error:{response.error}"],
             }
-        status, evidence = _status_from_parser(str(item.get("platform", "")), response.text, response.final_url, fallback_status)
+        status, evidence, cycles, locs, price = _status_from_parser(str(item.get("platform", "")), response.text, response.final_url, fallback_status)
         return {
             "product_id": item.get("product_id"),
             "canonical_url": product_url,
             "status": status,
             "checked_at": now,
+            "cycles": cycles,
+            "locations_raw": locs,
+            "price_raw": price,
             "evidence": evidence + [f"tier:{response.tier}"],
         }
 

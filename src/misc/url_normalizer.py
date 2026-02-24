@@ -5,65 +5,37 @@ import re
 from dataclasses import dataclass
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
-INVALID_PATH_PATTERNS = (
-    "contact",
-    "contact.php",
-    "announcements",
-    "announcement",
-    "knowledgebase",
-    "submitticket",
-    "supporttickets",
-    "supporttickets.php",
-    "clientarea",
-    "login",
-    "password",
-    "pwreset",
-    "forgot",
-    "register",
-    "affiliates",
-)
+import json
+from pathlib import Path
 
-INVALID_EXTENSIONS = {
-    ".png",
-    ".jpg",
-    ".jpeg",
-    ".gif",
-    ".webp",
-    ".svg",
-    ".ico",
-    ".css",
-    ".js",
-    ".woff",
-    ".woff2",
-    ".ttf",
-    ".eot",
-    ".pdf",
-    ".zip",
-    ".tar",
-    ".gz",
-}
+_url_cfg = {}
+try:
+    with Path("config/config.json").open("r", encoding="utf-8-sig") as _f:
+        _url_cfg = json.load(_f).get("url_normalizer", {})
+except Exception:
+    pass
 
-VOLATILE_QUERY_KEYS = {
-    "sid",
-    "session",
-    "phpsessid",
-    "utm_source",
-    "utm_medium",
-    "utm_campaign",
-    "utm_term",
-    "utm_content",
-}
+INVALID_PATH_PATTERNS = tuple(_url_cfg.get("invalid_path_patterns", (
+    "contact", "contact.php", "announcements", "announcement",
+    "knowledgebase", "submitticket", "supporttickets", "supporttickets.php",
+    "clientarea", "login", "password", "pwreset", "forgot", "register", "affiliates"
+)))
 
-ENGLISH_LANGUAGE_TAGS = {
-    "en",
-    "en-us",
-    "en_us",
-    "en-gb",
-    "en_gb",
-    "english",
-}
-LANGUAGE_QUERY_KEYS = {"language", "lang", "locale"}
-ROUTE_QUERY_KEYS = {"rp"}
+INVALID_EXTENSIONS = set(_url_cfg.get("invalid_extensions", [
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".ico", ".css",
+    ".js", ".woff", ".woff2", ".ttf", ".eot", ".pdf", ".zip", ".tar", ".gz"
+]))
+
+VOLATILE_QUERY_KEYS = set(_url_cfg.get("volatile_query_keys", [
+    "sid", "session", "phpsessid", "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"
+]))
+
+ENGLISH_LANGUAGE_TAGS = set(_url_cfg.get("english_language_tags", [
+    "en", "en-us", "en_us", "en-gb", "en_gb", "english"
+]))
+
+LANGUAGE_QUERY_KEYS = set(_url_cfg.get("language_query_keys", ["language", "lang", "locale"]))
+ROUTE_QUERY_KEYS = set(_url_cfg.get("route_query_keys", ["rp"]))
 
 
 @dataclass(slots=True)

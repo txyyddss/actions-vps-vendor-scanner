@@ -118,6 +118,7 @@ class LinkDiscoverer:
         current_layer: set[str] = {root}
         product_candidates: set[str] = set()
         category_candidates: set[str] = set()
+        dead_links: set[str] = set()
         stop_reason = "max-depth-reached"
 
         for depth in range(self.max_depth + 1):
@@ -167,7 +168,10 @@ class LinkDiscoverer:
                     except Exception as exc:  # noqa: BLE001
                         self.logger.warning("discover fetch failed source=%s error=%s", source_url, exc)
                         continue
-                    if not result.ok or not result.text:
+                    if not result.ok or not result.text or result.status_code == 404:
+                        dead_links.add(source_url)
+                        if getattr(result, "final_url", None):
+                            dead_links.add(result.final_url)
                         continue
                     extracted = self._extract_links(result.text, result.final_url)
                     new_links: set[str] = set()
@@ -211,6 +215,8 @@ class LinkDiscoverer:
             len(category_candidates),
             stop_reason,
         )
+        product_candidates -= dead_links
+        category_candidates -= dead_links
         return DiscoverResult(
             site_name=site_name,
             base_url=root,

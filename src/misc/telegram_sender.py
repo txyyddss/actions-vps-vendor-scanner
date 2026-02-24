@@ -10,11 +10,6 @@ import httpx
 
 from src.misc.logger import get_logger
 
-MAX_MESSAGE_LENGTH = 4096
-MAX_RETRIES = 5
-BASE_RETRY_DELAY = 1.0
-MIN_SEND_INTERVAL = 1.5  # seconds between sends to avoid per-chat rate limit
-
 
 def _escape(text: str) -> str:
     """Executes _escape logic."""
@@ -38,6 +33,10 @@ class TelegramConfig:
     bot_token: str
     chat_id: str
     topic_id: int | None = None
+    max_message_length: int = 4096
+    max_retries: int = 5
+    base_retry_delay: float = 1.0
+    min_send_interval: float = 1.5
 
 
 def _normalize_topic_id(value: str) -> int | None:
@@ -76,6 +75,10 @@ class TelegramSender:
             bot_token=bot_token,
             chat_id=chat_id,
             topic_id=topic_id,
+            max_message_length=int(cfg.get("max_message_length", 4096)),
+            max_retries=int(cfg.get("max_retries", 5)),
+            base_retry_delay=float(cfg.get("base_retry_delay", 1.0)),
+            min_send_interval=float(cfg.get("min_send_interval", 1.5)),
         )
         self.logger = get_logger("telegram")
         self._last_send_time: float = 0.0
@@ -91,8 +94,8 @@ class TelegramSender:
     def _throttle(self) -> None:
         """Ensure minimum interval between sends to avoid per-chat rate limits."""
         elapsed = time.monotonic() - self._last_send_time
-        if elapsed < MIN_SEND_INTERVAL:
-            time.sleep(MIN_SEND_INTERVAL - elapsed)
+        if elapsed < self.config.min_send_interval:
+            time.sleep(self.config.min_send_interval - elapsed)
 
     def _send(self, text: str) -> bool:
         """Executes _send logic."""
@@ -101,8 +104,8 @@ class TelegramSender:
             return False
 
         # Telegram message length limit
-        if len(text) > MAX_MESSAGE_LENGTH:
-            text = text[: MAX_MESSAGE_LENGTH - 20] + "\n\n…(truncated)"
+        if len(text) > self.config.max_message_length:
+            text = text[: self.config.max_message_length - 20] + "\n\n…(truncated)"
 
         self._throttle()
 
@@ -115,14 +118,14 @@ class TelegramSender:
         if self.config.topic_id:
             payload["message_thread_id"] = self.config.topic_id
 
-        for attempt in range(1, MAX_RETRIES + 1):
+        for attempt in range(1, self.config.max_retries + 1):
             try:
                 with httpx.Client(timeout=20) as client:
                     response = client.post(self._api_url, json=payload)
 
                 if response.status_code == 429:
                     # Respect Telegram's Retry-After header
-                    retry_after = BASE_RETRY_DELAY * (2 ** (attempt - 1))
+                    retry_after = self.config.base_retry_delay * (2 ** (attempt - 1))
                     try:
                         body = response.json()
                         retry_after = max(
@@ -134,7 +137,7 @@ class TelegramSender:
                     self.logger.warning(
                         "Telegram rate limited (429), attempt %s/%s, retrying in %.1fs",
                         attempt,
-                        MAX_RETRIES,
+                        self.config.max_retries,
                         retry_after,
                     )
                     time.sleep(retry_after)
@@ -149,24 +152,24 @@ class TelegramSender:
                     "Telegram send failed (HTTP %s), attempt %s/%s: %s",
                     exc.response.status_code,
                     attempt,
-                    MAX_RETRIES,
+                    self.config.max_retries,
                     exc,
                 )
                 if exc.response.status_code >= 500:
-                    time.sleep(BASE_RETRY_DELAY * (2 ** (attempt - 1)))
+                    time.sleep(self.config.base_retry_delay * (2 ** (attempt - 1)))
                     continue
                 return False
             except Exception as exc:  # noqa: BLE001
                 self.logger.warning(
                     "Telegram send failed, attempt %s/%s: %s",
                     attempt,
-                    MAX_RETRIES,
+                    self.config.max_retries,
                     exc,
                 )
-                time.sleep(BASE_RETRY_DELAY * (2 ** (attempt - 1)))
+                time.sleep(self.config.base_retry_delay * (2 ** (attempt - 1)))
                 continue
 
-        self.logger.error("Telegram send failed after %s attempts", MAX_RETRIES)
+        self.logger.error("Telegram send failed after %s attempts", self.config.max_retries)
         return False
 
     def _send_chunked(self, lines: list[str], header_lines: int = 0) -> bool:
@@ -182,7 +185,7 @@ class TelegramSender:
 
         for line in body_lines:
             line_len = len(line) + 1  # +1 for newline
-            if current_len + line_len > MAX_MESSAGE_LENGTH - 50:  # leave margin
+            if current_len + line_len > self.config.max_message_length - 50:  # leave margin
                 if current_chunk:
                     chunks.append("\n".join(current_chunk))
                 current_chunk = [line]

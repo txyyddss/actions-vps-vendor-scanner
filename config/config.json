@@ -61,7 +61,7 @@
     "stop_tail_window": 60,
     "stop_inactive_streak_category": 20,
     "stop_inactive_streak_product": 60,
-    "initial_scan_floor": 80,
+    "initial_scan_floor": 20,
     "default_scan_bounds": {
       "whmcs_gid_max": 800,
       "whmcs_pid_max": 3500,
@@ -76,10 +76,98 @@
     "topic_id": "",
     "bot_token_env": "TELEGRAM_BOT_TOKEN",
     "chat_id_env": "TELEGRAM_CHAT_ID",
-    "topic_id_env": "TELEGRAM_TOPIC_ID"
+    "topic_id_env": "TELEGRAM_TOPIC_ID",
+    "channel_url": "",
+    "max_message_length": 4096,
+    "max_retries": 5,
+    "base_retry_delay": 1.0,
+    "min_send_interval": 1.5
+  },
+  "url_normalizer": {
+    "invalid_path_patterns": [
+      "contact",
+      "contact.php",
+      "announcements",
+      "announcement",
+      "knowledgebase",
+      "submitticket",
+      "supporttickets",
+      "supporttickets.php",
+      "clientarea",
+      "login",
+      "password",
+      "pwreset",
+      "forgot",
+      "register",
+      "affiliates"
+    ],
+    "invalid_extensions": [
+      ".png",
+      ".jpg",
+      ".jpeg",
+      ".gif",
+      ".webp",
+      ".svg",
+      ".ico",
+      ".css",
+      ".js",
+      ".woff",
+      ".woff2",
+      ".ttf",
+      ".eot",
+      ".pdf",
+      ".zip",
+      ".tar",
+      ".gz"
+    ],
+    "volatile_query_keys": [
+      "sid",
+      "session",
+      "phpsessid",
+      "utm_source",
+      "utm_medium",
+      "utm_campaign",
+      "utm_term",
+      "utm_content"
+    ],
+    "english_language_tags": [
+      "en",
+      "en-us",
+      "en_us",
+      "en-gb",
+      "en_gb",
+      "english"
+    ],
+    "language_query_keys": [
+      "language",
+      "lang",
+      "locale"
+    ],
+    "route_query_keys": [
+      "rp"
+    ]
+  },
+  "data_merge": {
+    "source_priority": {
+      "discoverer": 1,
+      "category_scanner": 2,
+      "product_scanner": 3
+    }
+  },
+  "parsers": {
+    "oos_markers": [
+      "out of stock",
+      "sold out",
+      "currently unavailable",
+      "is currently unavailable",
+      "缺貨中",
+      "缺货中",
+      "無庫存",
+      "无库存"
+    ]
   },
   "dashboard": {
-    "title": "Aggregate Buying Dashboard",
+    "title": "TX Cicken dashboard",
     "default_theme": "dark",
     "show_stats": true
   },

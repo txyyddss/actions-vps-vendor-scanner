@@ -211,6 +211,7 @@ class HttpClient:
             "checking your browser before accessing",
             "please stand by, while we are checking your browser",
             "enable javascript and cookies to continue",
+            "to work with the site requires support for javascript and cookies",
             "ddos protection by cloudflare",
         )
         has_marker = any(marker in lower for marker in markers)

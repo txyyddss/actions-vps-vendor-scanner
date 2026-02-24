@@ -106,9 +106,27 @@ def scan_whmcs_gids(
                                     "canonical_url": category_url,
                                     "source_url": response.requested_url,
                                     "name_raw": parsed.name_raw,
-                                    "name_en": parsed.name_en,
                                     "stock_status": "unknown",
+                                    "type": "category",
+                                    "time_used": response.elapsed_ms,
                                     "evidence": parsed.evidence,
+                                }
+                            )
+                    
+                    if parsed.product_links:
+                        for plink in parsed.product_links:
+                            results.append(
+                                {
+                                    "site": site_name,
+                                    "platform": "WHMCS",
+                                    "scan_type": "category_scanner",
+                                    "source_priority": "category_scanner",
+                                    "canonical_url": normalize_url(urljoin(response.final_url, plink), force_english=True),
+                                    "source_url": response.requested_url,
+                                    "stock_status": "unknown",
+                                    "type": "product",
+                                    "time_used": response.elapsed_ms,
+                                    "evidence": parsed.evidence + ["category-product-link"],
                                 }
                             )
 

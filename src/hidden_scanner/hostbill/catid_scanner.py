@@ -107,11 +107,30 @@ def scan_hostbill_catids(
                                     "canonical_url": canonical,
                                     "source_url": response.requested_url,
                                     "name_raw": parsed.name_raw,
-                                    "name_en": parsed.name_en,
                                     "stock_status": "unknown",
+                                    "type": "category",
+                                    "time_used": response.elapsed_ms,
                                     "evidence": parsed.evidence,
                                 }
                             )
+
+                    if parsed.product_links:
+                        for plink in parsed.product_links:
+                            records.append(
+                                {
+                                    "site": site_name,
+                                    "platform": "HostBill",
+                                    "scan_type": "category_scanner",
+                                    "source_priority": "category_scanner",
+                                    "canonical_url": normalize_url(urljoin(response.final_url, plink), force_english=True),
+                                    "source_url": response.requested_url,
+                                    "stock_status": "unknown",
+                                    "type": "product",
+                                    "time_used": response.elapsed_ms,
+                                    "evidence": parsed.evidence + ["category-product-link"],
+                                }
+                            )
+
 
                 if planner.mark(cat_id, discovered_new):
                     break
