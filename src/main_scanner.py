@@ -22,6 +22,7 @@ from src.misc.logger import get_logger, setup_logging
 from src.misc.telegram_sender import TelegramSender
 from src.others.data_merge import diff_products, load_products, merge_records, write_products
 from src.others.state_store import StateStore
+from src.others.stock_checker import load_stock, sync_stock_snapshot, write_stock
 from src.site_specific.acck_api import scan_acck_api
 from src.site_specific.akile_api import scan_akile_api
 
@@ -208,7 +209,7 @@ def _attach_product_ids(products: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return products
 
 
-def _merge_mode(config: dict[str, Any]) -> list[dict[str, Any]]:
+def _merge_mode(config: dict[str, Any], http_client: HttpClient) -> list[dict[str, Any]]:
     """Executes _merge_mode logic."""
     discoverer_rows = _load_tmp("discoverer")
     category_rows = _load_tmp("category")
@@ -219,13 +220,28 @@ def _merge_mode(config: dict[str, Any]) -> list[dict[str, Any]]:
         discoverer_rows, product_rows, category_rows, previous_products=old_products
     )
     merged = _attach_product_ids(merged)
+    stock_sync = sync_stock_snapshot(
+        products=merged,
+        previous_items=load_stock("data/stock.json"),
+        http_client=http_client,
+        max_workers=int(config.get("scanner", {}).get("max_workers", 12)),
+        only_unknown=True,
+    )
+    merged = stock_sync.products
 
     added, deleted, changed_stock = diff_products(old_products, merged)
     run_id = _now_run_id()
 
     tg = TelegramSender(config.get("telegram", {}))
     if added or deleted:
-        tg.send_product_changes(new_urls=added, deleted_urls=deleted, products=merged)
+        tg.send_product_changes(
+            new_urls=added,
+            deleted_urls=deleted,
+            current_products=merged,
+            previous_products=old_products,
+        )
+    if stock_sync.changed_items:
+        tg.send_stock_change_alerts(stock_sync.changed_items)
     tg.send_run_stats(
         title="Scanner Run Summary",
         stats={
@@ -234,10 +250,20 @@ def _merge_mode(config: dict[str, Any]) -> list[dict[str, Any]]:
             "new_products": len(added),
             "deleted_products": len(deleted),
             "stock_changed": len(changed_stock),
+            "checked_products": len(stock_sync.checked_items),
+            "unknown_remaining": sum(
+                1 for item in stock_sync.snapshot_items if item.get("in_stock") == -1
+            ),
         },
     )
 
     write_products(merged, run_id=run_id, path="data/products.json")
+    write_stock(
+        items=stock_sync.snapshot_items,
+        run_id=run_id,
+        checked_count=len(stock_sync.checked_items),
+        path="data/stock.json",
+    )
     # Build dashboard data from the site-grouped structure
     from src.others.data_merge import _group_by_site
 
@@ -286,12 +312,12 @@ def main() -> None:
     elif args.mode == "product":
         _product_mode(sites, config, http_client, state_store)
     elif args.mode == "merge":
-        _merge_mode(config)
+        _merge_mode(config, http_client)
     else:
         _discover_mode(sites, config, http_client)
         _category_mode(sites, config, http_client, state_store)
         _product_mode(sites, config, http_client, state_store)
-        _merge_mode(config)
+        _merge_mode(config, http_client)
 
 
 if __name__ == "__main__":

@@ -152,10 +152,6 @@ def parse_hostbill_page(html: str, final_url: str) -> ParsedItem:
     prices = _extract_prices(full_text)
     has_order_step = "step=3" in final_lower
     has_add_id = "action=add&id=" in final_lower
-    has_product_signals = has_add_id or has_order_step
-    has_category_signals = bool(category_links_list) or bool(product_links)
-    has_content_signals = has_order_step or has_category_signals or bool(prices)
-    has_blocking_no_services = NO_SERVICES_MARKER in lowered and not has_content_signals
     has_oos_marker = any(marker in lowered for marker in ACTIVE_OOS_MARKERS)
     lowered_html = cleaned_html.lower()
     has_js_errors = "var errors" in lowered_html and any(
@@ -165,6 +161,17 @@ def parse_hostbill_page(html: str, final_url: str) -> ParsedItem:
     has_disabled_oos_button = bool(
         disabled_oos_button and "out of stock" in _text(disabled_oos_button).lower()
     )
+    has_confirmed_add_id = has_add_id and (
+        bool(prices)
+        or bool(product_links)
+        or has_oos_marker
+        or has_js_errors
+        or has_disabled_oos_button
+    )
+    has_product_signals = has_order_step or has_confirmed_add_id
+    has_category_signals = bool(category_links_list) or bool(product_links)
+    has_content_signals = has_order_step or has_category_signals or bool(prices)
+    has_blocking_no_services = NO_SERVICES_MARKER in lowered and not has_content_signals
     is_product = (
         has_product_signals and not has_blocking_no_services and not is_non_product_redirect
     )

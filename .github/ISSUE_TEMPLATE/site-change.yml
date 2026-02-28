@@ -1,21 +1,26 @@
 name: Site Change Request
-description: Add, edit, or delete a monitored site in config/sites.json
-title: "[Site Change] <action> <site-name>"
+description: Add or edit a monitored site in config/sites.json
+title: "[Site Change] <add|edit> <site-name>"
 labels: [site-change]
 body:
   - type: markdown
     attributes:
       value: |
-        Use this form for **site add/edit/delete** only.
+        ## What This Form Does
+        Use this form for **site add/edit** requests only.
 
-        Validation rules for add/edit:
+        ## Automatic Validation
         - `expected_product_number` is required and must be a positive integer.
         - Automation will run a live product-count scan on the provided URL.
         - If scanned products are fewer than expected, the request is rejected automatically.
 
-        Tips:
+        ## SPECIAL / Custom Sites
+        - `SPECIAL` and other custom integrations are **not** accepted here.
+        - If you want support for a `SPECIAL` site, please open a **Feature Request** instead.
+
+        ## Tips
         - Use the exact vendor portal URL (include protocol).
-        - For SPECIAL sites, set `special_crawler` (for example: `acck_api`, `akile_api`).
+        - Use the scanner checkbox list below. Checked means enabled, unchecked means disabled.
         - Monitor updates: https://t.me/tx_stock_monitor
 
   - type: dropdown
@@ -26,7 +31,6 @@ body:
       options:
         - add
         - edit
-        - delete
     validations:
       required: true
 
@@ -35,7 +39,7 @@ body:
     attributes:
       label: Site Name
       placeholder: ExampleHost
-      description: Must match existing name when action is edit/delete.
+      description: Must match existing name when action is edit.
     validations:
       required: true
 
@@ -46,7 +50,7 @@ body:
       placeholder: https://example.com/
       description: Required for add/edit. Must start with http:// or https://
     validations:
-      required: false
+      required: true
 
   - type: dropdown
     id: platform
@@ -56,7 +60,6 @@ body:
       options:
         - WHMCS
         - HostBill
-        - SPECIAL
     validations:
       required: true
 
@@ -67,46 +70,17 @@ body:
       placeholder: "20"
       description: Minimum product count expected from automated validation scan.
     validations:
-      required: false
-
-  - type: dropdown
-    id: discoverer
-    attributes:
-      label: Enable discoverer
-      options:
-        - "true"
-        - "false"
-    validations:
       required: true
 
-  - type: dropdown
-    id: product_scanner
+  - type: checkboxes
+    id: scanner_options
     attributes:
-      label: Enable product scanner
+      label: Scanner Options
+      description: Check each scanner to enable it. Leave unchecked to disable it.
       options:
-        - "true"
-        - "false"
-    validations:
-      required: true
-
-  - type: dropdown
-    id: category_scanner
-    attributes:
-      label: Enable category scanner
-      options:
-        - "true"
-        - "false"
-    validations:
-      required: true
-
-  - type: input
-    id: special_crawler
-    attributes:
-      label: Special crawler
-      placeholder: acck_api
-      description: Required for SPECIAL platform; leave empty otherwise.
-    validations:
-      required: false
+        - label: Enable discoverer
+        - label: Enable product scanner
+        - label: Enable category scanner
 
   - type: textarea
     id: notes

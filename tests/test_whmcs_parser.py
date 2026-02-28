@@ -26,6 +26,25 @@ def test_parse_whmcs_out_of_stock_marker() -> None:
     assert "oos-marker" in parsed.evidence
 
 
+def test_parse_whmcs_cart_add_generic_oos_is_product() -> None:
+    html = """
+    <html><body>
+      <div id="order-boxes">
+        <div class="header-lined"><h1>Out of Stock</h1></div>
+        <p>We are currently out of stock on this item so orders for it have been suspended until more stock is available.</p>
+      </div>
+    </body></html>
+    """
+    parsed = parse_whmcs_page(
+        html,
+        "https://example.com/cart.php?a=add&language=english&pid=120",
+    )
+    assert parsed.in_stock is False
+    assert parsed.is_product is True
+    assert "oos-marker" in parsed.evidence
+    assert "has-product-info" not in parsed.evidence
+
+
 def test_parse_whmcs_store_category_not_product() -> None:
     html = _fixture("whmcs_in_stock.html")
     parsed = parse_whmcs_page(html, "https://example.com/store/cat-a")

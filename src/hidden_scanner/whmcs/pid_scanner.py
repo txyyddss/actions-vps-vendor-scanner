@@ -119,16 +119,19 @@ def scan_whmcs_pids(
                     evidence = set(parsed.evidence)
                     accepted = False
                     in_stock = -1
+                    requested_canonical_url = canonicalize_for_merge(
+                        normalize_url(response.requested_url, force_english=True)
+                    )
 
                     if "confproduct-final-url" in evidence:
                         accepted = True
                         in_stock = 1
-                    elif route == "store_product" and "oos-marker" in evidence:
+                    elif route in {"store_product", "cart_add"} and "oos-marker" in evidence:
                         accepted = True
                         in_stock = 0
                     elif route in {"store_product", "cart_add"} and "has-product-info" in evidence:
                         accepted = True
-                        in_stock = 0 if "oos-marker" in evidence else 1
+                        in_stock = 1
 
                     duplicate_signature: tuple[Any, ...] | None = None
                     if accepted:
@@ -139,6 +142,8 @@ def scan_whmcs_pids(
                                     normalize_url(response.final_url, force_english=True)
                                 ),
                             )
+                        elif route == "cart_add" and "has-product-info" not in evidence:
+                            duplicate_signature = ("url", requested_canonical_url)
                         else:
                             duplicate_signature = ("content", *_content_signature(parsed))
 
@@ -146,9 +151,7 @@ def scan_whmcs_pids(
                         # Use requested_url (not final_url) because WHMCS redirects
                         # cart.php?a=add&pid=X to cart.php?a=confproduct&i=N which is
                         # session-dependent and not a stable product URL.
-                        canonical_url = canonicalize_for_merge(
-                            normalize_url(response.requested_url, force_english=True)
-                        )
+                        canonical_url = requested_canonical_url
                         record = {
                             "site": site_name,
                             "platform": "WHMCS",

@@ -51,7 +51,7 @@
     "discoverer_max_workers": 12,
     "scan_batch_size": 48,
     "discoverer_max_depth": 3,
-    "discoverer_max_pages": 500,
+    "discoverer_max_pages": 3000,
     "stop_tail_window": 60,
     "stop_inactive_streak_category": 20,
     "stop_inactive_streak_product": 60,

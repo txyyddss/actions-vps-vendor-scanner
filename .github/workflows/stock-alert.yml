@@ -44,7 +44,7 @@ jobs:
           done
           echo "FlareSolverr did not become ready in time"
           exit 1
-      - name: Run stock alert
+      - name: Run full stock alert sweep
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}

@@ -20,6 +20,7 @@ def test_parse_hostbill_out_of_stock_js_marker() -> None:
     parsed = parse_hostbill_page(
         html, "https://clients.example.com/index.php?/cart/&action=add&id=94"
     )
+    assert parsed.is_product is True
     assert parsed.in_stock is False
     assert "js-errors-array" in parsed.evidence
     assert "disabled-oos-button" in parsed.evidence
@@ -69,3 +70,20 @@ def test_parse_hostbill_ignores_noscript_warning_for_name() -> None:
     parsed = parse_hostbill_page(html, "https://clients.example.com/index.php?/cart/&step=3")
     assert parsed.is_product is True
     assert parsed.name_raw == "Real Product Name"
+
+
+def test_parse_hostbill_invalid_add_id_listing_is_not_product() -> None:
+    html = """
+    <html><body>
+    <script>var errors = [];</script>
+    <h2>Browse Products and Services</h2>
+    <a href="/index.php?/cart/special-offer/">Special Offer</a>
+    <div>No services yet</div>
+    </body></html>
+    """
+    parsed = parse_hostbill_page(
+        html, "https://clients.example.com/index.php?/cart/&action=add&id=3000"
+    )
+    assert parsed.is_product is False
+    assert parsed.is_category is True
+    assert parsed.in_stock is None

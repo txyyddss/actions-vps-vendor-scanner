@@ -8,6 +8,8 @@ body:
       value: |
         Describe the user outcome first, then implementation ideas.
 
+        Need support for a `SPECIAL` or other custom vendor integration? Use this form.
+
         Telegram channel: https://t.me/tx_stock_monitor
 
   - type: textarea

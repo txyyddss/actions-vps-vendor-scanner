@@ -1,4 +1,4 @@
-"""Processes GitHub issues to add, edit, or delete monitored sites automatically."""
+"""Processes GitHub issues to add or edit monitored sites automatically."""
 
 from __future__ import annotations
 
@@ -26,6 +26,10 @@ _GLOBAL_CONFIG = load_config("config/config.json")
 TELEGRAM_CHANNEL_URL = _GLOBAL_CONFIG.get("telegram", {}).get(
     "channel_url", "https://t.me/tx_stock_monitor"
 )
+FEATURE_REQUEST_GUIDANCE = (
+    "SPECIAL/custom sites are not accepted in Site Change. Please open a Feature Request instead."
+)
+DELETE_REQUEST_GUIDANCE = "Site Change no longer supports delete requests."
 
 
 def _parse_markdown_form(body: str) -> dict[str, str]:
@@ -60,7 +64,12 @@ def _parse_positive_int(value: str) -> int | None:
 
 def _parse_bool(value: str, default: bool = True) -> bool:
     """Executes _parse_bool logic."""
-    normalized = str(value or "").strip().lower()
+    raw_value = str(value or "").strip()
+    normalized = raw_value.lower()
+    if re.search(r"\[\s*x\s*\]", normalized):
+        return True
+    if re.search(r"\[\s*\]", normalized):
+        return False
     if normalized in {"true", "yes", "1", "on"}:
         return True
     if normalized in {"false", "no", "0", "off"}:
@@ -68,42 +77,70 @@ def _parse_bool(value: str, default: bool = True) -> bool:
     return default
 
 
+def _parse_checkbox_items(value: str) -> dict[str, bool]:
+    """Parse GitHub checkbox-list markdown into a label -> checked map."""
+    parsed: dict[str, bool] = {}
+    for raw_line in str(value or "").splitlines():
+        line = raw_line.strip()
+        match = re.match(r"^-\s*\[(?P<mark>[ xX])\]\s*(?P<label>.+?)\s*$", line)
+        if not match:
+            continue
+        parsed[match.group("label").strip().lower()] = match.group("mark").lower() == "x"
+    return parsed
+
+
 def _validate_site_payload(fields: dict[str, str]) -> tuple[bool, str]:
     """Executes _validate_site_payload logic."""
     action = fields.get("action", "").strip().lower()
-    if action not in {"add", "edit", "delete"}:
-        return False, "Action must be add, edit, or delete."
+    if action == "delete":
+        return False, DELETE_REQUEST_GUIDANCE
+    if action not in {"add", "edit"}:
+        return False, "Action must be add or edit."
 
     site_name = fields.get("site_name", "").strip()
     if not site_name:
         return False, "Site Name is required."
 
-    if action in {"add", "edit"}:
-        base_url = fields.get("base_url", "").strip()
-        if not re.match(r"^https?://", base_url):
-            return False, "Base URL must start with http:// or https://."
-        platform = fields.get("platform", "").strip()
-        if platform not in {"WHMCS", "HostBill", "SPECIAL"}:
-            return False, "Platform must be WHMCS, HostBill, or SPECIAL."
-        expected = _parse_positive_int(fields.get("expected_product_number", ""))
-        if expected is None:
-            return False, "Expected Product Number must be a positive integer."
+    base_url = fields.get("base_url", "").strip()
+    if not re.match(r"^https?://", base_url):
+        return False, "Base URL must start with http:// or https://."
+
+    platform = fields.get("platform", "").strip()
+    special_crawler = fields.get("special_crawler", "").strip()
+    if platform.upper() == "SPECIAL" or special_crawler:
+        return False, FEATURE_REQUEST_GUIDANCE
+    if platform not in {"WHMCS", "HostBill"}:
+        return False, "Platform must be WHMCS or HostBill."
+
+    expected = _parse_positive_int(fields.get("expected_product_number", ""))
+    if expected is None:
+        return False, "Expected Product Number must be a positive integer."
 
     return True, ""
 
 
 def _build_site_entry(fields: dict[str, str]) -> dict[str, Any]:
     """Executes _build_site_entry logic."""
+    scanner_options = _parse_checkbox_items(fields.get("scanner_options", ""))
     return normalize_site_entry(
         {
             "enabled": _parse_bool(fields.get("enabled", "true"), True),
             "name": fields.get("site_name", "").strip(),
             "url": fields.get("base_url", "").strip(),
-            "discoverer": _parse_bool(fields.get("discoverer", "true"), True),
+            "discoverer": scanner_options.get(
+                "enable discoverer",
+                _parse_bool(fields.get("discoverer", "true"), True),
+            ),
             "category": fields.get("platform", fields.get("category", "WHMCS")).strip() or "WHMCS",
-            "special_crawler": fields.get("special_crawler", "").strip(),
-            "product_scanner": _parse_bool(fields.get("product_scanner", "true"), True),
-            "category_scanner": _parse_bool(fields.get("category_scanner", "true"), True),
+            "special_crawler": "",
+            "product_scanner": scanner_options.get(
+                "enable product scanner",
+                _parse_bool(fields.get("product_scanner", "true"), True),
+            ),
+            "category_scanner": scanner_options.get(
+                "enable category scanner",
+                _parse_bool(fields.get("category_scanner", "true"), True),
+            ),
             "scan_bounds": {},
         }
     )
@@ -203,19 +240,15 @@ def _apply_site_change(
     action: str, site_name: str, new_site: dict[str, Any], sites_path: str = "config/sites.json"
 ) -> tuple[bool, str]:
     """Executes _apply_site_change logic."""
+    if action not in {"add", "edit"}:
+        return False, f"Unsupported site change action '{action}'."
+
     payload = load_json(sites_path)
     sites = payload.setdefault("sites", {}).setdefault("site", [])
     existing_idx = next(
         (idx for idx, site in enumerate(sites) if str(site.get("name", "")).strip() == site_name),
         -1,
     )
-
-    if action == "delete":
-        if existing_idx == -1:
-            return False, f"Site '{site_name}' not found."
-        sites.pop(existing_idx)
-        dump_json(sites_path, payload)
-        return True, f"Deleted site '{site_name}'."
 
     if existing_idx == -1 and action == "edit":
         return False, f"Cannot edit '{site_name}' because it does not exist."
@@ -264,7 +297,7 @@ def main() -> None:
     action_hint = fields.get("action", "").strip().lower()
     is_site_change = (
         "site-change" in labels
-        or action_hint in {"add", "edit", "delete"}
+        or action_hint in {"add", "edit"}
         or "[site change]" in title.lower()
     )
     if is_site_change:

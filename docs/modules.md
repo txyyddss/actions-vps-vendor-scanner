@@ -3,10 +3,10 @@
 A detailed guide on the internal Python modules and their responsibilities.
 
 ## `src.main_scanner`
-The entrypoint for the main crawling routines. Routes execution to one of the four key stages (discoverer, category, product, or merge).
+The entrypoint for the main crawling routines. Routes execution to one of the four key stages (discoverer, category, product, or merge). The merge stage is also the primary stock-finalization step, resolving only unknown product states before it writes `products.json`, `stock.json`, and dashboard output.
 
 ## `src.main_stock_alert`
-A lightweight, high-frequency job meant to be run far more often than the full scanner. Validates the stock status of known product URLs and triggers restock notifications.
+A lightweight, high-frequency follow-up job meant to be run between full scanner passes. Unlike the merge stage, it rechecks every known product row, refreshes `stock.json`, and emits any resulting stock change alerts.
 
 ## `src.main_issue_processor`
 Handles automated interaction with GitHub Issues. Validates URLs and payload sanity before conditionally appending or updating the `sites.json` config manifest.

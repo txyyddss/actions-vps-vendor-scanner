@@ -375,6 +375,49 @@ def test_whmcs_pid_scanner_accepts_oos_store_product(tmp_path) -> None:
     assert "oos-marker" in records[0]["evidence"]
 
 
+def test_whmcs_pid_scanner_keeps_distinct_cart_add_oos_products(tmp_path) -> None:
+    html = """
+    <html><body>
+      <div id="order-boxes">
+        <div class="header-lined"><h1>Out of Stock</h1></div>
+        <p>We are currently out of stock on this item so orders for it have been suspended until more stock is available.</p>
+      </div>
+    </body></html>
+    """
+
+    class CartAddOosClient:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, bool]] = []
+
+        def get(self, url: str, force_english: bool = True):  # noqa: ANN001
+            self.calls.append((url, force_english))
+            return SimpleNamespace(
+                ok=True,
+                requested_url=url,
+                final_url=url,
+                status_code=200,
+                text=html,
+                headers={},
+                tier="direct",
+                elapsed_ms=10,
+                error=None,
+            )
+
+    fake = CartAddOosClient()
+    state_store = StateStore(tmp_path / "state.json")
+    config = _scanner_config()
+    config["scanner"]["default_scan_bounds"]["whmcs_pid_max"] = 1
+    site = _site("CartAddOOSWHMCS", "https://example.com/")
+    site["scan_bounds"]["whmcs_pid_max"] = 1
+
+    records = scan_whmcs_pids(site, config, fake, state_store)
+
+    assert len(records) == 2
+    assert [record["pid"] for record in records] == [0, 1]
+    assert all(record["in_stock"] == 0 for record in records)
+    assert len({record["canonical_url"] for record in records}) == 2
+
+
 def test_whmcs_pid_scanner_rejects_cart_root_redirect(tmp_path) -> None:
     html = """
     <html><body>
@@ -534,3 +577,69 @@ def test_whmcs_pid_scanner_deduplicates_confproduct_content(tmp_path) -> None:
     assert len(records) == 1
     assert records[0]["pid"] == 0
     assert len(fake.calls) == 2
+
+
+def test_hostbill_pid_scanner_stops_after_invalid_add_id_listing_streak(tmp_path) -> None:
+    oos_html = """
+    <html><body>
+      <script>
+      var errors = ["Special plan is currently out of stock"];
+      </script>
+      <button type="submit" class="btn disabled" disabled="disabled">Out of stock!</button>
+      <h2>Special Offer Plan</h2>
+    </body></html>
+    """
+    invalid_listing_html = """
+    <html><body>
+      <script>var errors = [];</script>
+      <h2>Browse Products and Services</h2>
+      <a href="/index.php?/cart/special-offer/">Special Offer</a>
+      <div>No services yet</div>
+    </body></html>
+    """
+
+    class HostBillPidClient:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, bool]] = []
+
+        def get(self, url: str, force_english: bool = True):  # noqa: ANN001
+            self.calls.append((url, force_english))
+            pid = int(url.rsplit("=", 1)[-1])
+            html = oos_html if pid == 0 else invalid_listing_html
+            return SimpleNamespace(
+                ok=True,
+                requested_url=url,
+                final_url=url,
+                status_code=200,
+                text=html,
+                headers={},
+                tier="direct",
+                elapsed_ms=10,
+                error=None,
+            )
+
+    fake = HostBillPidClient()
+    state_store = StateStore(tmp_path / "state.json")
+    config = {
+        "scanner": {
+            "max_workers": 1,
+            "scan_batch_size": 1,
+            "initial_scan_floor": 0,
+            "stop_tail_window": 20,
+            "stop_inactive_streak_product": 8,
+            "default_scan_bounds": {
+                "whmcs_gid_max": 0,
+                "whmcs_pid_max": 0,
+                "hostbill_catid_max": 0,
+                "hostbill_pid_max": 50,
+            },
+        }
+    }
+    site = _site("HostBillStop", "https://example.com/")
+    site["scan_bounds"]["hostbill_pid_max"] = 50
+
+    records = scan_hostbill_pids(site, config, fake, state_store)
+
+    assert len(records) == 1
+    assert records[0]["pid"] == 0
+    assert len(fake.calls) == 9

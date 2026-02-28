@@ -11,34 +11,44 @@ import httpx
 
 from src.misc.logger import get_logger
 
+CONTINUATION_MARKER = "_\\(cont\\.\\)_"
+MESSAGE_SAFETY_MARGIN = 64
+BLOCK_SAFETY_MARGIN = 120
+DEFAULT_PRODUCT_NAME = "Unnamed Product"
+DEFAULT_SITE_NAME = "Unknown Site"
+DEFAULT_PRICE = "Unknown"
+DEFAULT_LINK_LABEL = "Open Product"
+
 
 def _escape_md2(text: str) -> str:
     """Escape text for Telegram MarkdownV2 format."""
     special_chars = r"_*[]()~`>#+-=|{}.!"
-    result = []
-    for ch in text:
+    result: list[str] = []
+    for ch in str(text):
         if ch in special_chars:
             result.append("\\")
         result.append(ch)
     return "".join(result)
 
 
-def _stock_label(in_stock: int) -> str:
-    """Convert in_stock integer to human-readable label."""
-    if in_stock == 1:
-        return "🟢 In Stock"
-    if in_stock == 0:
-        return "🔴 Out of Stock"
-    return "⚪ Unknown"
+def _escape_md2_link_target(url: str) -> str:
+    """Escape link target characters that break Telegram MarkdownV2 links."""
+    target = str(url or "").strip()
+    return target.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
 
 
-def _stock_emoji(in_stock: int) -> str:
-    """Short emoji for stock status."""
-    if in_stock == 1:
-        return "🟢"
-    if in_stock == 0:
-        return "🔴"
-    return "⚪"
+def _stock_status(in_stock: int) -> tuple[str, str]:
+    """Return a consistent icon + label tuple for product availability."""
+    try:
+        value = int(in_stock)
+    except (TypeError, ValueError):
+        value = -1
+
+    if value == 1:
+        return "🟢", "In Stock"
+    if value == 0:
+        return "🔴", "Out of Stock"
+    return "⚪", "Unknown"
 
 
 @dataclass(slots=True)
@@ -53,6 +63,14 @@ class TelegramConfig:
     max_retries: int = 5
     base_retry_delay: float = 1.0
     min_send_interval: float = 1.5
+
+
+@dataclass(slots=True)
+class _MessageBlock:
+    """Atomic content block used by chunked Telegram messages."""
+
+    text: str
+    force_new_message_before: bool = False
 
 
 def _normalize_topic_id(value: str) -> int | None:
@@ -103,6 +121,29 @@ class TelegramSender:
     def _api_url(self) -> str:
         return f"https://api.telegram.org/bot{self.config.bot_token}/sendMessage"
 
+    @property
+    def _safe_message_length(self) -> int:
+        """Return a safe chunk size below Telegram's hard limit."""
+        return max(80, self.config.max_message_length - MESSAGE_SAFETY_MARGIN)
+
+    @property
+    def _safe_block_length(self) -> int:
+        """Reserve space for headers and section labels around each product block."""
+        return max(60, self._safe_message_length - BLOCK_SAFETY_MARGIN)
+
+    @staticmethod
+    def _join_segments(segments: list[str]) -> str:
+        """Join message segments with paragraph spacing."""
+        return "\n\n".join(segment for segment in segments if segment)
+
+    @staticmethod
+    def _product_sort_key(item: dict[str, Any]) -> tuple[str, str, str]:
+        """Sort products for human-readable ordering."""
+        site = str(item.get("site") or DEFAULT_SITE_NAME).lower()
+        name = str(item.get("name_raw") or DEFAULT_PRODUCT_NAME).lower()
+        url = str(item.get("canonical_url") or "")
+        return (site, name, url)
+
     def _throttle(self) -> None:
         """Ensure minimum interval between sends to avoid per-chat rate limits."""
         elapsed = time.monotonic() - self._last_send_time
@@ -115,7 +156,7 @@ class TelegramSender:
             return False
 
         if len(text) > self.config.max_message_length:
-            text = text[: self.config.max_message_length - 20] + "\n\n…\\(truncated\\)"
+            text = text[: self.config.max_message_length - 18] + "\n\n_\\(truncated\\)_"
 
         self._throttle()
 
@@ -181,90 +222,132 @@ class TelegramSender:
         self.logger.error("Telegram send failed after %s attempts", self.config.max_retries)
         return False
 
-    def _send_chunked(self, lines: list[str], header_lines: int = 0) -> bool:
-        """Split long messages into multiple sends to stay within Telegram's limit."""
-        header = "\n".join(lines[:header_lines]) if header_lines else ""
-        body_lines = lines[header_lines:]
+    def _format_product_blocks(self, item: dict[str, Any]) -> list[_MessageBlock]:
+        """Render a product into one or more atomic chunk blocks."""
+        icon, status_label = _stock_status(item.get("in_stock", -1))
+        name = str(item.get("name_raw") or DEFAULT_PRODUCT_NAME).strip() or DEFAULT_PRODUCT_NAME
+        site = str(item.get("site") or DEFAULT_SITE_NAME).strip() or DEFAULT_SITE_NAME
+        price = str(item.get("price_raw") or DEFAULT_PRICE).strip() or DEFAULT_PRICE
+        url = str(item.get("canonical_url") or "").strip()
 
-        chunks: list[str] = []
-        current_chunk: list[str] = []
-        first_chunk_overhead = len(header) + 1 if header else 0
-        current_len = first_chunk_overhead
+        metadata_lines = [
+            f"{icon} *{_escape_md2(status_label)}* {_escape_md2(name)}",
+            f"*Site:* {_escape_md2(site)}",
+            f"*Price:* {_escape_md2(price)}",
+        ]
 
-        for line in body_lines:
-            line_len = len(line) + 1
-            if current_len + line_len > self.config.max_message_length - 50:
-                if current_chunk:
-                    chunks.append("\n".join(current_chunk))
-                current_chunk = [line]
-                current_len = line_len
+        if url:
+            link_line = f"🔗 [{_escape_md2(DEFAULT_LINK_LABEL)}]({_escape_md2_link_target(url)})"
+        else:
+            link_line = f"🔗 *Link:* {_escape_md2('N/A')}"
+
+        full_block = "\n".join([*metadata_lines, link_line])
+        if url and len(full_block) > self._safe_block_length:
+            return [
+                _MessageBlock("\n".join(metadata_lines)),
+                _MessageBlock(f"🔗 {_escape_md2(url)}", force_new_message_before=True),
+            ]
+        return [_MessageBlock(full_block)]
+
+    def _send_sectioned(
+        self,
+        header_lines: list[str],
+        sections: list[tuple[str, list[_MessageBlock]]],
+    ) -> bool:
+        """Send chunked messages while keeping product blocks and section headers intact."""
+        rendered_sections = [(title, blocks) for title, blocks in sections if blocks]
+        if not rendered_sections:
+            return False
+
+        header_text = "\n".join(line for line in header_lines if line)
+        messages: list[str] = []
+        current_segments = [header_text] if header_text else []
+
+        def fits(additions: list[str]) -> bool:
+            candidate = self._join_segments(current_segments + [part for part in additions if part])
+            return len(candidate) <= self._safe_message_length
+
+        def flush() -> None:
+            if current_segments:
+                messages.append(self._join_segments(current_segments))
+
+        for section_title, blocks in rendered_sections:
+            first_block = blocks[0]
+            section_start = [section_title, first_block.text]
+            if first_block.force_new_message_before and current_segments:
+                flush()
+                current_segments = [CONTINUATION_MARKER, section_title]
+            if not fits(section_start):
+                header_only = bool(header_text and not messages and current_segments == [header_text])
+                if header_only:
+                    current_segments.extend(section_start)
+                else:
+                    flush()
+                    current_segments = [CONTINUATION_MARKER, section_title, first_block.text]
             else:
-                current_chunk.append(line)
-                current_len += line_len
+                current_segments.extend(section_start)
 
-        if current_chunk:
-            chunks.append("\n".join(current_chunk))
+            for block in blocks[1:]:
+                if block.force_new_message_before and current_segments:
+                    flush()
+                    current_segments = [CONTINUATION_MARKER, section_title]
+                if not fits([block.text]):
+                    flush()
+                    current_segments = [CONTINUATION_MARKER, section_title, block.text]
+                else:
+                    current_segments.append(block.text)
 
-        if not chunks:
-            return self._send(header or "\n".join(lines))
+        flush()
 
         all_ok = True
-        for i, chunk in enumerate(chunks):
-            if i == 0 and header:
-                text = f"{header}\n{chunk}"
-            elif i > 0:
-                text = f"_\\(cont\\.\\)_\n{chunk}"
-            else:
-                text = chunk
-            if not self._send(text):
+        for message in messages:
+            if not self._send(message):
                 all_ok = False
         return all_ok
 
-    # ── Product catalog changes ──────────────────────────────────
+    def _build_section_blocks(self, items: list[dict[str, Any]]) -> list[_MessageBlock]:
+        """Flatten a sorted item list into chunkable product blocks."""
+        blocks: list[_MessageBlock] = []
+        for item in sorted(items, key=self._product_sort_key):
+            blocks.extend(self._format_product_blocks(item))
+        return blocks
+
+    # Product catalog changes
     def send_product_changes(
         self,
         new_urls: list[str],
         deleted_urls: list[str],
-        products: list[dict[str, Any]] | None = None,
+        current_products: list[dict[str, Any]] | None = None,
+        previous_products: list[dict[str, Any]] | None = None,
     ) -> bool:
-        """Send notification about new and deleted products with rich details."""
-        e = _escape_md2
-        product_map = {p.get("canonical_url"): p for p in (products or [])}
-        lines = [
-            "🔔 *Product Catalog Changed*",
-            "",
-            f"*\\+{len(new_urls)}* new  ·  *\\-{len(deleted_urls)}* removed",
-            "",
-        ]
-        if new_urls:
-            lines.append("📦 *New Products:*")
-            for url in new_urls[:50]:
-                product = product_map.get(url, {})
-                name = product.get("name_raw", "")
-                site = product.get("site", "")
-                stock = _stock_emoji(product.get("in_stock", -1))
-                label = f"{e(site)} \\- {e(name)}" if name else e(url)
-                lines.append(f"  {stock} {label}")
-                if name:
-                    lines.append(f"      `{e(url)}`")
-            if len(new_urls) > 50:
-                lines.append(f"  _\\.\\.\\.and {len(new_urls) - 50} more_")
-            lines.append("")
-        if deleted_urls:
-            lines.append("🗑 *Removed:*")
-            for url in deleted_urls[:50]:
-                lines.append(f"  • `{e(url)}`")
-            if len(deleted_urls) > 50:
-                lines.append(f"  _\\.\\.\\.and {len(deleted_urls) - 50} more_")
-            lines.append("")
-        return self._send_chunked(lines, header_lines=4)
+        """Send notification about new and deleted products with full product details."""
+        if not new_urls and not deleted_urls:
+            return False
 
-    # ── Run statistics ───────────────────────────────────────────
+        current_map = {item.get("canonical_url"): item for item in (current_products or [])}
+        previous_map = {item.get("canonical_url"): item for item in (previous_products or [])}
+
+        new_items = [current_map.get(url, {"canonical_url": url}) for url in new_urls]
+        deleted_items = [previous_map.get(url, {"canonical_url": url}) for url in deleted_urls]
+
+        sections: list[tuple[str, list[_MessageBlock]]] = []
+        if new_items:
+            sections.append(("🆕 *New Products*", self._build_section_blocks(new_items)))
+        if deleted_items:
+            sections.append(("🗑 *Removed Products*", self._build_section_blocks(deleted_items)))
+
+        header_lines = [
+            "📦 *Product Catalog Changed*",
+            f"*{len(new_urls)}* new • *{len(deleted_urls)}* removed",
+        ]
+        return self._send_sectioned(header_lines, sections)
+
+    # Run statistics
     def send_run_stats(self, title: str, stats: dict[str, Any]) -> bool:
         """Send run statistics summary with improved formatting."""
         e = _escape_md2
         lines = [
-            f"📊 *{e(title)}*",
+            f"📈 *{e(title)}*",
             "",
         ]
         for key, value in stats.items():
@@ -273,37 +356,17 @@ class TelegramSender:
         lines.append("")
         return self._send("\n".join(lines))
 
-    # ── Restock alerts ───────────────────────────────────────────
+    # Restock alerts
     def send_restock_alerts(
         self,
         restocked_items: list[dict[str, Any]],
     ) -> bool:
-        """Send restock alert with product name, site, and price."""
+        """Compatibility wrapper that routes restock notifications through the unified sender."""
         if not restocked_items:
             return False
-        e = _escape_md2
-        lines = [
-            "🟢 *Restock Detected\\!*",
-            "",
-            f"*{len(restocked_items)}* product\\(s\\) back in stock:",
-            "",
-        ]
-        for item in restocked_items[:50]:
-            url = item.get("canonical_url", "")
-            name = item.get("name_raw", "")
-            site = item.get("site", "")
-            price = item.get("price_raw", "")
-            label = f"*{e(site)}* \\- {e(name)}" if name else f"`{e(url)}`"
-            price_suffix = f" \\| {e(price)}" if price else ""
-            lines.append(f"  🟢 {label}{price_suffix}")
-            if name:
-                lines.append(f"      `{e(url)}`")
-        if len(restocked_items) > 50:
-            lines.append(f"  _\\.\\.\\.and {len(restocked_items) - 50} more_")
-        lines.append("")
-        return self._send_chunked(lines, header_lines=4)
+        return self.send_stock_change_alerts(restocked_items)
 
-    # ── Stock change alerts (comprehensive) ──────────────────────
+    # Stock change alerts (comprehensive)
     def send_stock_change_alerts(
         self,
         changed_items: list[dict[str, Any]],
@@ -311,45 +374,29 @@ class TelegramSender:
         """Send comprehensive stock change notification."""
         if not changed_items:
             return False
-        e = _escape_md2
-        restocked = [i for i in changed_items if i.get("restocked")]
-        destocked = [i for i in changed_items if i.get("destocked")]
+
+        restocked = [item for item in changed_items if item.get("restocked")]
+        destocked = [item for item in changed_items if item.get("destocked")]
         other = [
-            i
-            for i in changed_items
-            if i.get("changed") and not i.get("restocked") and not i.get("destocked")
+            item
+            for item in changed_items
+            if not item.get("restocked") and not item.get("destocked")
         ]
 
-        lines = [
-            "📈 *Stock Status Changes*",
-            "",
-            f"🟢 *{len(restocked)}* restocked  ·  🔴 *{len(destocked)}* went OOS  ·  ⚪ *{len(other)}* other",
-            "",
-        ]
+        sections: list[tuple[str, list[_MessageBlock]]] = []
         if restocked:
-            lines.append("🟢 *Restocked:*")
-            for item in restocked[:20]:
-                name = item.get("name_raw", "")
-                site = item.get("site", "")
-                price = item.get("price_raw", "")
-                label = (
-                    f"*{e(site)}* \\- {e(name)}"
-                    if name
-                    else f"`{e(item.get('canonical_url', ''))}`"
-                )
-                price_suffix = f" \\| {e(price)}" if price else ""
-                lines.append(f"  {label}{price_suffix}")
-            lines.append("")
+            sections.append(("🟢 *Back In Stock*", self._build_section_blocks(restocked)))
         if destocked:
-            lines.append("🔴 *Out of Stock:*")
-            for item in destocked[:20]:
-                name = item.get("name_raw", "")
-                site = item.get("site", "")
-                label = (
-                    f"*{e(site)}* \\- {e(name)}"
-                    if name
-                    else f"`{e(item.get('canonical_url', ''))}`"
-                )
-                lines.append(f"  {label}")
-            lines.append("")
-        return self._send_chunked(lines, header_lines=4)
+            sections.append(("🔴 *Went Out Of Stock*", self._build_section_blocks(destocked)))
+        if other:
+            sections.append(("⚪ *Status Changed / Unknown*", self._build_section_blocks(other)))
+
+        header_lines = [
+            "📊 *Stock Status Changes*",
+            (
+                f"🟢 *{len(restocked)}* back in stock • "
+                f"🔴 *{len(destocked)}* out of stock • "
+                f"⚪ *{len(other)}* other"
+            ),
+        ]
+        return self._send_sectioned(header_lines, sections)

@@ -289,10 +289,14 @@ def parse_whmcs_page(html: str, final_url: str) -> ParsedItem:
             "select[name*=cycle]",
         ],
     )
+    cart_add_oos_nodes = []
+    if route == "cart_add":
+        # Some WHMCS templates keep generic OOS pages on cart.php?a=add&pid=...
+        cart_add_oos_nodes = _unique_nodes(soup, ["#order-boxes"])
 
     oos_nodes = alert_nodes
     if route in PRODUCT_LIKE_ROUTES:
-        oos_nodes = [*alert_nodes, *product_signal_nodes]
+        oos_nodes = [*alert_nodes, *product_signal_nodes, *cart_add_oos_nodes]
     has_oos_marker = _has_oos_marker(_texts_from_nodes(oos_nodes))
 
     name_raw = _pick_name(soup)
@@ -378,7 +382,7 @@ def parse_whmcs_page(html: str, final_url: str) -> ParsedItem:
         in_stock = None
 
     is_product = route in {"confproduct", "store_product"} or (
-        route == "cart_add" and has_product_info
+        route == "cart_add" and (has_product_info or has_oos_marker)
     )
     is_category = route == "store_category" or (
         route in {"cart_root", "other"} and bool(category_links or product_links)

@@ -1,4 +1,4 @@
-"""Periodic job to check stock statuses of all known products and send Telegram alerts for restocks."""
+"""Periodic full stock sweep job that rechecks all products and sends stock change alerts."""
 
 from __future__ import annotations
 
@@ -10,11 +10,11 @@ from src.misc.http_client import HttpClient
 from src.misc.logger import setup_logging
 from src.misc.telegram_sender import TelegramSender
 from src.others.data_merge import load_products
-from src.others.stock_checker import check_stock, load_stock, merge_with_previous, write_stock
+from src.others.stock_checker import load_stock, sync_stock_snapshot, write_stock
 
 
 def main() -> None:
-    """Run stock check and send alerts."""
+    """Run a full stock sweep and send alerts."""
     config = load_config("config/config.json")
     setup_logging(
         level=str(config.get("logging", {}).get("level", "INFO")),
@@ -23,7 +23,7 @@ def main() -> None:
 
     products_path = Path("data/products.json")
     if not products_path.exists():
-        write_stock(items=[], run_id="stock-run", path="data/stock.json")
+        write_stock(items=[], run_id="stock-run", checked_count=0, path="data/stock.json")
         return
 
     products = load_products("data/products.json")
@@ -35,52 +35,58 @@ def main() -> None:
         tg.send_run_stats(
             title="Stock Alert Run Summary",
             stats={
-                "total_checked": 0,
+                "total_products": 0,
+                "checked_products": 0,
+                "in_stock": 0,
+                "out_of_stock": 0,
+                "unknown": 0,
                 "restocked": 0,
                 "destocked": 0,
                 "changed": 0,
             },
         )
-        write_stock(items=[], run_id=run_id, path="data/stock.json")
+        write_stock(items=[], run_id=run_id, checked_count=0, path="data/stock.json")
         return
 
     http_client = HttpClient(config=config)
-    current_items = check_stock(
+    stock_sync = sync_stock_snapshot(
         products=products,
+        previous_items=load_stock("data/stock.json"),
         http_client=http_client,
         max_workers=int(config.get("scanner", {}).get("max_workers", 12)),
+        only_unknown=False,
     )
-    previous_items = load_stock("data/stock.json")
-    merged_items = merge_with_previous(current_items=current_items, previous_items=previous_items)
 
     tg = TelegramSender(config.get("telegram", {}))
 
-    # Send restock alerts with full product info
-    restocked_items = [item for item in merged_items if item.get("restocked")]
-    if restocked_items:
-        tg.send_restock_alerts(restocked_items)
-
-    # Send comprehensive stock change alerts
-    changed_items = [item for item in merged_items if item.get("changed")]
-    if changed_items:
-        tg.send_stock_change_alerts(changed_items)
+    if stock_sync.changed_items:
+        tg.send_stock_change_alerts(stock_sync.changed_items)
 
     tg.send_run_stats(
         title="Stock Alert Run Summary",
         stats={
-            "total_checked": len(merged_items),
-            "in_stock": sum(1 for item in merged_items if item.get("in_stock") == 1),
-            "out_of_stock": sum(1 for item in merged_items if item.get("in_stock") == 0),
-            "restocked": len(restocked_items),
-            "destocked": sum(1 for item in merged_items if item.get("destocked")),
-            "changed": len(changed_items),
+            "total_products": len(stock_sync.snapshot_items),
+            "checked_products": len(stock_sync.checked_items),
+            "in_stock": sum(1 for item in stock_sync.snapshot_items if item.get("in_stock") == 1),
+            "out_of_stock": sum(
+                1 for item in stock_sync.snapshot_items if item.get("in_stock") == 0
+            ),
+            "unknown": sum(1 for item in stock_sync.snapshot_items if item.get("in_stock") == -1),
+            "restocked": sum(1 for item in stock_sync.snapshot_items if item.get("restocked")),
+            "destocked": sum(1 for item in stock_sync.snapshot_items if item.get("destocked")),
+            "changed": len(stock_sync.changed_items),
         },
     )
 
     # Read run_id from the raw file
     raw = json.loads(products_path.read_text(encoding="utf-8-sig"))
     run_id = raw.get("run_id") or "stock-run"
-    write_stock(items=merged_items, run_id=run_id, path="data/stock.json")
+    write_stock(
+        items=stock_sync.snapshot_items,
+        run_id=run_id,
+        checked_count=len(stock_sync.checked_items),
+        path="data/stock.json",
+    )
 
 
 if __name__ == "__main__":

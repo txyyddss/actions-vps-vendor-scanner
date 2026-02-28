@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,61 @@ from src.misc.http_client import HttpClient
 from src.misc.logger import get_logger
 from src.parsers.hostbill_parser import parse_hostbill_page
 from src.parsers.whmcs_parser import parse_whmcs_page
+
+
+@dataclass(slots=True)
+class StockSyncResult:
+    """Represents a full stock snapshot refresh outcome."""
+
+    products: list[dict[str, Any]]
+    snapshot_items: list[dict[str, Any]]
+    checked_items: list[dict[str, Any]]
+    changed_items: list[dict[str, Any]]
+
+
+def _stock_key(item: dict[str, Any]) -> str:
+    """Return the canonical lookup key used for stock snapshots."""
+    return str(item.get("canonical_url") or item.get("source_url") or "")
+
+
+def _coerce_stock_value(item: dict[str, Any]) -> int:
+    """Normalize stock state to the internal integer representation."""
+    if "in_stock" in item:
+        try:
+            value = int(item["in_stock"])
+        except (TypeError, ValueError):
+            value = -1
+        if value in {-1, 0, 1}:
+            return value
+
+    legacy = str(item.get("stock_status", "unknown")).lower()
+    if legacy == "in_stock":
+        return 1
+    if legacy == "out_of_stock":
+        return 0
+    return -1
+
+
+def _snapshot_from_product(item: dict[str, Any]) -> dict[str, Any]:
+    """Project a product record into the persisted stock snapshot shape."""
+    snapshot: dict[str, Any] = {
+        "product_id": item.get("product_id"),
+        "canonical_url": _stock_key(item),
+        "site": item.get("site", ""),
+        "name_raw": item.get("name_raw", ""),
+        "in_stock": _coerce_stock_value(item),
+        "checked_at": item.get("checked_at"),
+        "evidence": list(item.get("evidence", [])),
+    }
+
+    if "price_raw" in item:
+        snapshot["price_raw"] = item.get("price_raw", "")
+    if "cycles" in item:
+        snapshot["cycles"] = list(item.get("cycles", []))
+    if "locations_raw" in item:
+        snapshot["locations_raw"] = list(item.get("locations_raw", []))
+
+    return snapshot
 
 
 def _in_stock_from_parser(
@@ -106,15 +162,87 @@ def check_stock(
     return rows
 
 
+def sync_stock_snapshot(
+    products: list[dict[str, Any]],
+    previous_items: list[dict[str, Any]],
+    http_client: HttpClient,
+    max_workers: int = 12,
+    only_unknown: bool = True,
+) -> StockSyncResult:
+    """Refresh a product list against the latest stock snapshot with optional live checks."""
+    now = datetime.now(timezone.utc).isoformat()
+    updated_products = [dict(item) for item in products]
+    product_rows = [
+        item
+        for item in updated_products
+        if str(item.get("type", "product")).lower() != "category"
+    ]
+
+    previous_map = {_stock_key(item): item for item in previous_items if _stock_key(item)}
+    targets = (
+        [item for item in product_rows if _coerce_stock_value(item) == -1]
+        if only_unknown
+        else list(product_rows)
+    )
+
+    checked_items_raw = check_stock(targets, http_client, max_workers=max_workers) if targets else []
+    checked_map = {_stock_key(item): item for item in checked_items_raw if _stock_key(item)}
+    ordered_checked_items = [
+        checked_map[key]
+        for key in (_stock_key(item) for item in targets)
+        if key in checked_map
+    ]
+
+    product_by_url = {_stock_key(item): item for item in product_rows if _stock_key(item)}
+    checked_urls = set()
+    for checked in ordered_checked_items:
+        url = _stock_key(checked)
+        checked_urls.add(url)
+        product = product_by_url.get(url)
+        if not product:
+            continue
+
+        product["in_stock"] = _coerce_stock_value(checked)
+        product["evidence"] = list(checked.get("evidence", []))
+        if "price_raw" in checked:
+            product["price_raw"] = checked.get("price_raw", "")
+        if "cycles" in checked:
+            product["cycles"] = list(checked.get("cycles", []))
+        if "locations_raw" in checked:
+            product["locations_raw"] = list(checked.get("locations_raw", []))
+
+    snapshot_items = [_snapshot_from_product(item) for item in product_rows]
+    merged_snapshot = merge_with_previous(snapshot_items, previous_items)
+
+    for item in merged_snapshot:
+        url = _stock_key(item)
+        if url in checked_urls:
+            continue
+
+        previous = previous_map.get(url)
+        if previous and not item.get("changed") and previous.get("checked_at"):
+            item["checked_at"] = previous["checked_at"]
+        else:
+            item["checked_at"] = now
+
+    changed_items = [item for item in merged_snapshot if item.get("changed")]
+    return StockSyncResult(
+        products=updated_products,
+        snapshot_items=merged_snapshot,
+        checked_items=ordered_checked_items,
+        changed_items=changed_items,
+    )
+
+
 def merge_with_previous(
     current_items: list[dict[str, Any]],
     previous_items: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """Merge current stock check results with previous run, detecting restocks and changes."""
-    previous_map = {item.get("canonical_url"): item for item in previous_items}
+    previous_map = {_stock_key(item): item for item in previous_items if _stock_key(item)}
     merged: list[dict[str, Any]] = []
     for item in current_items:
-        previous = previous_map.get(item.get("canonical_url"))
+        previous = previous_map.get(_stock_key(item))
         prev_stock = previous.get("in_stock") if previous else None
         curr_stock = item.get("in_stock")
         changed = prev_stock is not None and prev_stock != curr_stock
@@ -140,15 +268,23 @@ def load_stock(path: str = "data/stock.json") -> list[dict[str, Any]]:
     return list(payload.get("items", []))
 
 
-def write_stock(items: list[dict[str, Any]], run_id: str, path: str = "data/stock.json") -> None:
+def write_stock(
+    items: list[dict[str, Any]],
+    run_id: str,
+    checked_count: int = 0,
+    path: str = "data/stock.json",
+) -> None:
     """Write stock check results to JSON."""
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "run_id": run_id,
         "stats": {
-            "total_checked": len(items),
+            "total_products": len(items),
+            "checked_products": checked_count,
             "restocked": sum(1 for item in items if item.get("restocked")),
             "destocked": sum(1 for item in items if item.get("destocked")),
+            "changed": sum(1 for item in items if item.get("changed")),
+            "unknown": sum(1 for item in items if item.get("in_stock") == -1),
         },
         "items": items,
     }

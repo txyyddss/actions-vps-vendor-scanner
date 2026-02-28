@@ -49,7 +49,8 @@ python -m src.main_scanner --mode category
 # 3. Aggressively enumerate product IDs based on historical highwater marks
 python -m src.main_scanner --mode product
 
-# 4. Filter, compile, and wash discovered lists down to a single master file
+# 4. Filter, compile, and wash discovered lists down to a single master file,
+#    then finalize unknown stock states before writing outputs
 python -m src.main_scanner --mode merge
 ```
 
@@ -58,7 +59,7 @@ Or you can trigger the entire end-to-end operation with a single argument:
 python -m src.main_scanner --mode all
 ```
 
-To frequently poll for active restocks in existing high-priority products without rediscovering:
+To run a full stock sweep across all known products without rediscovering:
 ```bash
 python -m src.main_stock_alert
 ```
