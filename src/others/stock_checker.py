@@ -17,17 +17,9 @@ def _in_stock_from_parser(
     platform: str, html: str, final_url: str, fallback: int
 ) -> tuple[int, list[str], list[str], list[str], str]:
     """Parse HTML and return (in_stock_int, evidence, cycles, locations_raw, price_raw)."""
-    if platform == "WHMCS":
-        parsed = parse_whmcs_page(html, final_url)
-        evidence = parsed.evidence
-        if parsed.in_stock is True:
-            return 1, evidence, parsed.cycles, parsed.locations_raw, parsed.price_raw
-        if parsed.in_stock is False:
-            return 0, evidence, parsed.cycles, parsed.locations_raw, parsed.price_raw
-        return fallback, evidence, parsed.cycles, parsed.locations_raw, parsed.price_raw
-
-    if platform == "HostBill":
-        parsed = parse_hostbill_page(html, final_url)
+    if platform in ("WHMCS", "HostBill"):
+        parser = parse_whmcs_page if platform == "WHMCS" else parse_hostbill_page
+        parsed = parser(html, final_url)
         evidence = parsed.evidence
         if parsed.in_stock is True:
             return 1, evidence, parsed.cycles, parsed.locations_raw, parsed.price_raw

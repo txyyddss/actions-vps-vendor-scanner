@@ -1,41 +1,20 @@
 from __future__ import annotations
 """Site-specific parser and fetcher for the ACCK API vendor."""
 
-import json
-import re
 from datetime import datetime, timezone
 from typing import Any
 
 from src.misc.http_client import HttpClient
 from src.misc.logger import get_logger
 from src.misc.url_normalizer import canonicalize_for_merge, normalize_url
+from src.site_specific.api_helpers import build_cycles, parse_json_payload
 
 API_URL = "https://api.acck.io/api/v1/store/GetVpsStore"
 SHOP_BASE = "https://acck.io/shop/server"
 
 
-def _parse_json_payload(raw_text: str) -> dict[str, Any]:
-    """Executes _parse_json_payload logic."""
-    text = raw_text.strip()
-    if text.startswith("<"):
-        match = re.search(r"<pre[^>]*>(.*?)</pre>", text, re.IGNORECASE | re.DOTALL)
-        if match:
-            text = match.group(1)
-        text = text.replace("&quot;", '"').replace("&amp;", "&")
-    return json.loads(text)
-
-
-def _build_cycles(price_datas: Any) -> tuple[list[str], str]:
-    """Executes _build_cycles logic."""
-    if not isinstance(price_datas, dict):
-        return [], ""
-    cycles: list[str] = []
-    parts: list[str] = []
-    for key, value in price_datas.items():
-        cycle_name = str(key).replace("_", " ").title()
-        cycles.append(cycle_name)
-        parts.append(f"{cycle_name}: {value}")
-    return cycles, "; ".join(parts)
+_parse_json_payload = parse_json_payload
+_build_cycles = build_cycles
 
 
 def scan_acck_api(site: dict[str, Any], http_client: HttpClient) -> list[dict[str, Any]]:

@@ -116,7 +116,7 @@ def classify_url(url: str) -> UrlClassification:
             return UrlClassification(url=normalized, is_invalid_product_url=True, reason=f"denylist:{pattern}")
 
     # Filter out non-product cart pages (view cart, checkout, confproduct).
-    non_product_actions = ("a=view", "a=checkout", "a=confproduct")
+    non_product_actions = ("a=view", "a=checkout")
     if any(action in lowered for action in non_product_actions):
         return UrlClassification(url=normalized, is_invalid_product_url=True, reason="cart-action-page")
 

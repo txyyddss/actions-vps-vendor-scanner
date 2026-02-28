@@ -5,7 +5,7 @@ import re
 
 from bs4 import BeautifulSoup
 
-from src.parsers.common import ParsedItem
+from src.parsers.common import ParsedItem, bs4_text, extract_prices
 
 import json
 from pathlib import Path
@@ -27,14 +27,10 @@ OOS_MARKERS = tuple(_parser_cfg.get("oos_markers", (
 NON_PRODUCT_REDIRECT_MARKERS = ("/checkdomain/",)
 
 
-def _text(node: object) -> str:
-    """Executes _text logic."""
-    return str(node.get_text("\n", strip=True)) if hasattr(node, "get_text") else ""
+_text = bs4_text
 
 
-def _extract_prices(text: str) -> list[str]:
-    """Executes _extract_prices logic."""
-    return list(dict.fromkeys(re.findall(r"(?:[$€£¥]|HK\$)\s?[0-9][0-9,.]*\s?(?:USD|CAD|HKD)?", text)))
+_extract_prices = extract_prices
 
 
 def _extract_cycles(text: str) -> list[str]:

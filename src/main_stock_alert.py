@@ -8,6 +8,7 @@ from src.misc.config_loader import load_config
 from src.misc.http_client import HttpClient
 from src.misc.logger import setup_logging
 from src.misc.telegram_sender import TelegramSender
+from src.others.data_merge import load_products
 from src.others.stock_checker import check_stock, load_stock, merge_with_previous, write_stock
 
 
@@ -24,10 +25,11 @@ def main() -> None:
         write_stock(items=[], run_id="stock-run", path="data/stock.json")
         return
 
-    products_payload = json.loads(products_path.read_text(encoding="utf-8-sig"))
-    products = list(products_payload.get("products", []))
+    products = load_products("data/products.json")
     if not products:
-        run_id = products_payload.get("run_id") or "stock-run"
+        # Read run_id from the raw file for stats reporting
+        raw = json.loads(products_path.read_text(encoding="utf-8-sig"))
+        run_id = raw.get("run_id") or "stock-run"
         tg = TelegramSender(config.get("telegram", {}))
         tg.send_run_stats(
             title="Stock Alert Run Summary",
@@ -74,7 +76,9 @@ def main() -> None:
         },
     )
 
-    run_id = products_payload.get("run_id") or "stock-run"
+    # Read run_id from the raw file
+    raw = json.loads(products_path.read_text(encoding="utf-8-sig"))
+    run_id = raw.get("run_id") or "stock-run"
     write_stock(items=merged_items, run_id=run_id, path="data/stock.json")
 
 

@@ -106,6 +106,7 @@ def scan_hostbill_catids(
                                     "canonical_url": canonical,
                                     "source_url": response.requested_url,
                                     "name_raw": parsed.name_raw,
+                                    "description_raw": "",
                                     "in_stock": -1,
                                     "type": "category",
                                     "time_used": response.elapsed_ms,

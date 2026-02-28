@@ -105,6 +105,7 @@ def scan_whmcs_gids(
                                     "canonical_url": category_url,
                                     "source_url": response.requested_url,
                                     "name_raw": parsed.name_raw,
+                                    "description_raw": "",
                                     "in_stock": -1,
                                     "type": "category",
                                     "time_used": response.elapsed_ms,

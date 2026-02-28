@@ -10,7 +10,10 @@ from src.misc.config_loader import dump_json, load_config, load_json
 from src.misc.logger import get_logger
 from src.misc.url_normalizer import canonicalize_for_merge, classify_url
 
-_GLOBAL_CONFIG = load_config("config/config.json")
+try:
+    _GLOBAL_CONFIG = load_config("config/config.json")
+except Exception:  # noqa: BLE001
+    _GLOBAL_CONFIG = {}
 SCAN_TYPE_PRIORITY = _GLOBAL_CONFIG.get("data_merge", {}).get("source_priority", {
     "discoverer": 1,
     "category_scanner": 2,
@@ -158,7 +161,7 @@ def merge_records(
             # Merge evidence from duplicate into winner
             combined_evidence = list(dict.fromkeys(winner.get("evidence", []) + record.get("evidence", [])))
             winner["evidence"] = combined_evidence
-            if not combined_evidence.__contains__("content-dedup-merged"):
+            if "content-dedup-merged" not in combined_evidence:
                 winner["evidence"].append("content-dedup-merged")
             urls_to_drop.add(url)
         else:
@@ -203,27 +206,65 @@ def diff_products(
 
 
 def load_products(path: str = "data/products.json") -> list[dict[str, Any]]:
-    """Load product list from JSON file."""
+    """Load products from site-grouped JSON, returning a flat list with site/platform on each record."""
     if not Path(path).exists():
         return []
     payload = load_json(path)
+    # New site-grouped format
+    sites = payload.get("sites")
+    if isinstance(sites, list):
+        flat: list[dict[str, Any]] = []
+        for site_block in sites:
+            site_name = site_block.get("site", "")
+            platform = site_block.get("platform", "")
+            for item in site_block.get("products", []):
+                flat.append({**item, "site": site_name, "platform": platform, "type": "product"})
+            for item in site_block.get("categories", []):
+                flat.append({**item, "site": site_name, "platform": platform, "type": "category"})
+        return flat
+    # Legacy flat format fallback
     return list(payload.get("products", []))
 
 
+def _group_by_site(products: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Group a flat product list into site-grouped entries."""
+    from collections import OrderedDict
+
+    groups: OrderedDict[tuple[str, str], dict[str, Any]] = OrderedDict()
+    for item in products:
+        key = (item.get("site", ""), item.get("platform", ""))
+        if key not in groups:
+            groups[key] = {"site": key[0], "platform": key[1], "categories": [], "products": []}
+        # Strip site/platform from nested record to avoid duplication
+        nested = {k: v for k, v in item.items() if k not in ("site", "platform")}
+        if item.get("type") == "category":
+            groups[key]["categories"].append(nested)
+        else:
+            groups[key]["products"].append(nested)
+
+    sites: list[dict[str, Any]] = []
+    for group in groups.values():
+        group["product_count"] = len(group["products"])
+        sites.append(group)
+    return sites
+
+
 def write_products(products: list[dict[str, Any]], run_id: str, path: str = "data/products.json") -> None:
-    """Write product list to JSON with computed stats."""
+    """Write product list to site-grouped JSON with computed stats."""
     in_stock_count = sum(1 for item in products if item.get("in_stock") == 1)
     oos_count = sum(1 for item in products if item.get("in_stock") == 0)
+    sites = _group_by_site(products)
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "run_id": run_id,
         "stats": {
+            "total_sites": len(sites),
             "total_products": len(products),
             "in_stock": in_stock_count,
             "out_of_stock": oos_count,
             "unknown": len(products) - in_stock_count - oos_count,
         },
-        "products": products,
+        "sites": sites,
     }
     dump_json(path, payload)
 

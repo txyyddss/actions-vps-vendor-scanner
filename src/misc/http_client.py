@@ -349,8 +349,9 @@ class HttpClient:
             # Retry when direct result indicates transient failure.
             if direct.status_code and direct.status_code in self.retry_status_codes:
                 self.rate_limiter.apply_cooldown(normalized_url, self.default_cooldown_seconds)
-            delay = self.backoff.delay_for_attempt(attempt)
-            time.sleep(delay)
+            if attempt < self.backoff.max_attempts:
+                delay = self.backoff.delay_for_attempt(attempt)
+                time.sleep(delay)
             last_error = last_error or direct.error or f"status={direct.status_code}"
 
         self.circuit_breaker.record_failure(domain)

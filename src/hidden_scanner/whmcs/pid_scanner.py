@@ -11,16 +11,11 @@ from src.misc.logger import get_logger
 from src.misc.url_normalizer import canonicalize_for_merge, normalize_url
 from src.hidden_scanner.scan_control import AdaptiveScanController
 from src.others.state_store import StateStore
+from src.parsers.common import in_stock_int
 from src.parsers.whmcs_parser import parse_whmcs_page
 
 
-def _in_stock_int(flag: bool | None) -> int:
-    """Convert parser bool|None to integer: 1=in_stock, 0=oos, -1=unknown."""
-    if flag is True:
-        return 1
-    if flag is False:
-        return 0
-    return -1
+_in_stock_int = in_stock_int
 
 
 def scan_whmcs_pids(

@@ -214,15 +214,20 @@ def _merge_mode(config: dict[str, Any]) -> list[dict[str, Any]]:
     )
 
     write_products(merged, run_id=run_id, path="data/products.json")
+    # Build dashboard data from the site-grouped structure
+    from src.others.data_merge import _group_by_site
+
+    sites = _group_by_site(merged)
     products_payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "stats": {
+            "total_sites": len(sites),
             "total_products": len(merged),
             "in_stock": sum(1 for item in merged if item.get("in_stock") == 1),
             "out_of_stock": sum(1 for item in merged if item.get("in_stock") == 0),
             "unknown": sum(1 for item in merged if item.get("in_stock") == -1),
         },
-        "products": merged,
+        "sites": sites,
     }
     generate_dashboard(products_payload, output_dir="web", dashboard_cfg=config.get("dashboard", {}))
     return merged

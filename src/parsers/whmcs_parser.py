@@ -6,7 +6,7 @@ from urllib.parse import parse_qsl, urlparse
 
 from bs4 import BeautifulSoup
 
-from src.parsers.common import ParsedItem
+from src.parsers.common import ParsedItem, bs4_text, extract_prices
 
 import json
 from pathlib import Path
@@ -38,9 +38,7 @@ GENERIC_HEADINGS = {
 }
 
 
-def _text(node: object) -> str:
-    """Executes _text logic."""
-    return str(node.get_text("\n", strip=True)) if hasattr(node, "get_text") else ""
+_text = bs4_text
 
 
 def _pick_name(soup: BeautifulSoup) -> str:
@@ -67,9 +65,7 @@ def _pick_name(soup: BeautifulSoup) -> str:
     return candidates[0] if candidates else ""
 
 
-def _extract_prices(text: str) -> list[str]:
-    """Executes _extract_prices logic."""
-    return list(dict.fromkeys(re.findall(r"(?:[$€£¥]|HK\$)\s?[0-9][0-9,.]*\s?(?:USD|CAD|HKD)?", text)))
+_extract_prices = extract_prices
 
 
 def _extract_cycles(soup: BeautifulSoup) -> list[str]:

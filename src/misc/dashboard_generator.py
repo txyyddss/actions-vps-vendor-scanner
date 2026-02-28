@@ -478,9 +478,25 @@ def generate_dashboard(
     theme = str(cfg.get("default_theme", "dark"))
     show_stats = bool(cfg.get("show_stats", True))
 
-    products = list(products_payload.get("products", []))
+    # Flatten site-grouped format into flat product list for JS frontend
+    sites = products_payload.get("sites")
+    if isinstance(sites, list):
+        products: list[dict[str, Any]] = []
+        for site_block in sites:
+            site_name = site_block.get("site", "")
+            platform = site_block.get("platform", "")
+            for item in site_block.get("products", []):
+                products.append({**item, "site": site_name, "platform": platform})
+            for item in site_block.get("categories", []):
+                products.append({**item, "site": site_name, "platform": platform})
+        total_sites = len(sites)
+    else:
+        # Legacy flat format fallback
+        products = list(products_payload.get("products", []))
+        total_sites = len({item.get("site") for item in products if item.get("site")})
+
     stats = dict(products_payload.get("stats", {}))
-    stats["total_sites"] = len({item.get("site") for item in products if item.get("site")})
+    stats["total_sites"] = total_sites
     generated_at = products_payload.get("generated_at") or datetime.now(timezone.utc).isoformat()
 
     data = {
