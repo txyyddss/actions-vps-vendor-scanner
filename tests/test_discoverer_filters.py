@@ -37,6 +37,7 @@ def test_discoverer_skips_non_english_and_utility_paths() -> None:
         "https://example.com/knowledgebase",
         "https://example.com/submitticket",
         "https://example.com/supporttickets.php?language=english",
+        normalize_url("https://example.com/store/vps/basic?currency=2"),
         normalize_url("https://example.com/index.php?currency=8&language=english&rp=%2Fannouncements%2F59%2Fx.html"),
     }
     pages = {
@@ -49,6 +50,7 @@ def test_discoverer_skips_non_english_and_utility_paths() -> None:
               <a href="/submitticket">ticket</a>
               <a href="/knowledgebase">kb</a>
               <a href="/supporttickets.php?language=english">supporttickets</a>
+              <a href="/store/vps/basic?currency=2">product-currency</a>
               <a href="/index.php?currency=8&language=english&rp=%2Fannouncements%2F59%2Fx.html">route-ann</a>
               <a href="/announcements?language=norwegian">ann</a>
               <a href="/store/vps/basic">product</a>

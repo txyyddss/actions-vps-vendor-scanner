@@ -40,7 +40,13 @@ def _extract_cycles(text: str) -> list[str]:
     return list(dict.fromkeys(cycles))
 
 
-def _extract_product_links(soup: BeautifulSoup) -> list[str]:
+def _extract_inline_links(html: str) -> list[str]:
+    """Extract cart-like URLs from raw HTML/script blobs."""
+    pattern = re.compile(r"(https?://[^'\"\s<>]+|/index\.php\?/cart/[^'\"\s<>]+|/cart/[^'\"\s<>]+)", re.IGNORECASE)
+    return list(dict.fromkeys(match.group(1) for match in pattern.finditer(html)))
+
+
+def _extract_product_links(soup: BeautifulSoup, html: str) -> list[str]:
     """Executes _extract_product_links logic."""
     links: list[str] = []
 
@@ -56,10 +62,15 @@ def _extract_product_links(soup: BeautifulSoup) -> list[str]:
         if "action=add&id=" in lower or re.search(r"[?&]id=\d+", lower):
             links.append(href)
 
+    for candidate in _extract_inline_links(html):
+        lower = candidate.lower()
+        if "action=add&id=" in lower or re.search(r"[?&]id=\d+", lower):
+            links.append(candidate)
+
     return list(dict.fromkeys(links))
 
 
-def _extract_category_links(soup: BeautifulSoup) -> list[str]:
+def _extract_category_links(soup: BeautifulSoup, html: str) -> list[str]:
     """Executes _extract_category_links logic."""
     links: list[str] = []
     for anchor in soup.select("a[href]"):
@@ -69,6 +80,13 @@ def _extract_category_links(soup: BeautifulSoup) -> list[str]:
             links.append(href)
         if "cmd=cart&cat_id=" in lower:
             links.append(href)
+
+    for candidate in _extract_inline_links(html):
+        lower = candidate.lower()
+        if "/cart/" in lower and "action=add&id=" not in lower and "step=3" not in lower:
+            links.append(candidate)
+        if "cmd=cart&cat_id=" in lower:
+            links.append(candidate)
     return list(dict.fromkeys(links))
 
 
@@ -90,8 +108,10 @@ def parse_hostbill_page(html: str, final_url: str) -> ParsedItem:
 
     # Product validity signals for HostBill are multi-source and theme dependent.
     is_non_product_redirect = any(marker in final_lower for marker in NON_PRODUCT_REDIRECT_MARKERS)
+    product_links = _extract_product_links(soup, html)
+    category_links_list = _extract_category_links(soup, html)
     has_product_signals = has_add_id or has_order_step
-    has_category_signals = bool(_extract_category_links(soup)) or bool(_extract_product_links(soup))
+    has_category_signals = bool(category_links_list) or bool(product_links)
     is_product = has_product_signals and not has_no_services and not is_non_product_redirect
     is_category = has_category_signals and not has_no_services and not is_non_product_redirect and not is_product
 
@@ -160,8 +180,6 @@ def parse_hostbill_page(html: str, final_url: str) -> ParsedItem:
         evidence.append("order-step")
     if has_add_id:
         evidence.append("add-id-url")
-    product_links = _extract_product_links(soup)
-    category_links_list = _extract_category_links(soup)
     if product_links:
         evidence.append(f"product-link-count:{len(product_links)}")
     if category_links_list:

@@ -54,19 +54,8 @@ def _normalize_query_key(key: str) -> str:
     return normalized
 
 
-def normalize_url(url: str, base_url: str | None = None, force_english: bool = False) -> str:
-    """Executes normalize_url logic."""
-    if base_url:
-        url = urljoin(base_url, url)
-
-    parsed = urlparse(url.strip())
-    scheme = parsed.scheme or "https"
-    netloc = parsed.netloc.lower()
-    path = re.sub(r"/{2,}", "/", parsed.path or "/")
-    if path != "/" and path.endswith("/"):
-        path = path[:-1]
-
-    raw_pairs = [(k, v) for k, v in parse_qsl(parsed.query, keep_blank_values=True) if k]
+def _normalized_query_pairs(raw_pairs: list[tuple[str, str]], force_english: bool) -> list[tuple[str, str]]:
+    """Normalize and sort query pairs while preserving semantic keys."""
     query_pairs: list[tuple[str, str]] = []
     for key, value in raw_pairs:
         normalized_key = _normalize_query_key(key)
@@ -81,7 +70,46 @@ def normalize_url(url: str, base_url: str | None = None, force_english: bool = F
         query_pairs = [(k, v) for k, v in query_pairs if k not in LANGUAGE_QUERY_KEYS]
         query_pairs.append(("language", "english"))
 
-    query_pairs = sorted(query_pairs, key=lambda item: item[0].lower())
+    return sorted(query_pairs, key=lambda item: item[0].lower())
+
+
+def _normalize_hostbill_pseudo_route_query(raw_query: str, force_english: bool) -> str | None:
+    """Preserve HostBill `index.php?/cart/...` pseudo-route queries without percent-encoding the route."""
+    if not raw_query.startswith("/") or "/cart/" not in raw_query.lower():
+        return None
+
+    route_part, separator, remainder = raw_query.partition("&")
+    raw_pairs = parse_qsl(remainder, keep_blank_values=True) if separator else []
+    query_pairs = _normalized_query_pairs(raw_pairs, force_english=force_english)
+
+    if not query_pairs:
+        return route_part
+    return f"{route_part}&{urlencode(query_pairs, doseq=True)}"
+
+
+def normalize_url(url: str, base_url: str | None = None, force_english: bool = False) -> str:
+    """Executes normalize_url logic."""
+    if base_url:
+        url = urljoin(base_url, url)
+
+    parsed = urlparse(url.strip())
+    scheme = parsed.scheme or "https"
+    netloc = parsed.netloc.lower()
+    path = re.sub(r"/{2,}", "/", parsed.path or "/")
+    if path != "/" and path.endswith("/"):
+        path = path[:-1]
+
+    pseudo_query = _normalize_hostbill_pseudo_route_query(parsed.query, force_english=force_english)
+    if pseudo_query is not None:
+        return urlunparse((scheme, netloc, path, "", pseudo_query, ""))
+
+    if force_english and not parsed.query and "/cart/&" in path.lower():
+        # HostBill path-style cart routes already encode parameters inside the path.
+        # Appending `?language=english` would corrupt the route.
+        return urlunparse((scheme, netloc, path, "", "", ""))
+
+    raw_pairs = [(k, v) for k, v in parse_qsl(parsed.query, keep_blank_values=True) if k]
+    query_pairs = _normalized_query_pairs(raw_pairs, force_english=force_english)
     query = urlencode(query_pairs, doseq=True)
     return urlunparse((scheme, netloc, path, "", query, ""))
 
@@ -161,6 +189,9 @@ def should_skip_discovery_url(url: str) -> tuple[bool, str]:
     query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
     for key, value in query_pairs:
         key_lower = _normalize_query_key(key)
+        if key_lower == "currency":
+            return True, "blocked-query:currency"
+
         if key_lower in LANGUAGE_QUERY_KEYS:
             language_tag = value.strip().lower()
             if language_tag and language_tag not in ENGLISH_LANGUAGE_TAGS:

@@ -29,3 +29,16 @@ def test_parse_hostbill_no_services_not_product() -> None:
     assert parsed.is_product is False
     assert parsed.in_stock is None
     assert "no-services-yet" in parsed.evidence
+
+
+def test_parse_hostbill_extracts_product_links_from_inline_script() -> None:
+    html = """
+    <html><body>
+    <script>
+    window.planUrl = '/index.php?/cart/special-offer/&action=add&id=122&cycle=a';
+    </script>
+    </body></html>
+    """
+    parsed = parse_hostbill_page(html, "https://clients.example.com/?cmd=cart&cat_id=3")
+    assert "/index.php?/cart/special-offer/&action=add&id=122&cycle=a" in parsed.product_links
+    assert parsed.is_category is True

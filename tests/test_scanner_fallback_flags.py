@@ -223,3 +223,286 @@ def test_whmcs_scanners_use_split_inactive_streak_limits(tmp_path) -> None:
     product_client = FakeHttpClient()
     scan_whmcs_pids(site, config, product_client, state_store)
     assert len(product_client.calls) == 60
+
+
+def test_whmcs_pid_scanner_ignores_oos_category_redirects_for_stop_logic(tmp_path) -> None:
+    html = """
+    <html><body>
+      <div class="message message-danger">Out of Stock We are currently out of stock on this item.</div>
+      <a href="/store/vps/basic">Basic</a>
+    </body></html>
+    """
+
+    class RedirectingCategoryClient:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, bool]] = []
+
+        def get(self, url: str, force_english: bool = True):  # noqa: ANN001
+            self.calls.append((url, force_english))
+            return SimpleNamespace(
+                ok=True,
+                requested_url=url,
+                final_url="https://example.com/store/vps",
+                status_code=200,
+                text=html,
+                headers={},
+                tier="direct",
+                elapsed_ms=10,
+                error=None,
+            )
+
+    fake = RedirectingCategoryClient()
+    state_store = StateStore(tmp_path / "state.json")
+    config = {
+        "scanner": {
+            "max_workers": 1,
+            "scan_batch_size": 1,
+            "initial_scan_floor": 20,
+            "stop_tail_window": 20,
+            "stop_inactive_streak_product": 20,
+            "default_scan_bounds": {
+                "whmcs_gid_max": 0,
+                "whmcs_pid_max": 200,
+                "hostbill_catid_max": 0,
+                "hostbill_pid_max": 0,
+            },
+        }
+    }
+    site = _site("RedirectedWHMCS", "https://example.com/")
+    site["scan_bounds"]["whmcs_pid_max"] = 200
+
+    records = scan_whmcs_pids(site, config, fake, state_store)
+
+    assert records == []
+    assert len(fake.calls) == 21
+
+
+def test_whmcs_pid_scanner_accepts_confproduct_as_in_stock(tmp_path) -> None:
+    html = """
+    <html><body>
+      <div id="frmConfigureProduct">
+        <h2 class="product-title">Fast VPS</h2>
+        <div id="sectionCycles">Monthly $10.00 USD</div>
+        <button type="submit">Continue</button>
+      </div>
+    </body></html>
+    """
+
+    class ConfproductClient:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, bool]] = []
+
+        def get(self, url: str, force_english: bool = True):  # noqa: ANN001
+            self.calls.append((url, force_english))
+            return SimpleNamespace(
+                ok=True,
+                requested_url=url,
+                final_url="https://example.com/cart.php?a=confproduct&i=0",
+                status_code=200,
+                text=html,
+                headers={},
+                tier="direct",
+                elapsed_ms=10,
+                error=None,
+            )
+
+    fake = ConfproductClient()
+    state_store = StateStore(tmp_path / "state.json")
+
+    records = scan_whmcs_pids(_site("ConfproductWHMCS", "https://example.com/"), _scanner_config(), fake, state_store)
+
+    assert len(records) == 1
+    assert records[0]["in_stock"] == 1
+    assert "confproduct-final-url" in records[0]["evidence"]
+    assert "has-product-info" in records[0]["evidence"]
+
+
+def test_whmcs_pid_scanner_accepts_oos_store_product(tmp_path) -> None:
+    html = """
+    <html><body>
+      <div class="message message-danger">Out of Stock We are currently out of stock on this item.</div>
+      <h2>Outage Plan</h2>
+    </body></html>
+    """
+
+    class OosProductClient:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, bool]] = []
+
+        def get(self, url: str, force_english: bool = True):  # noqa: ANN001
+            self.calls.append((url, force_english))
+            return SimpleNamespace(
+                ok=True,
+                requested_url=url,
+                final_url="https://example.com/store/vps/outage-plan",
+                status_code=200,
+                text=html,
+                headers={},
+                tier="direct",
+                elapsed_ms=10,
+                error=None,
+            )
+
+    fake = OosProductClient()
+    state_store = StateStore(tmp_path / "state.json")
+
+    records = scan_whmcs_pids(_site("OOSWHMCS", "https://example.com/"), _scanner_config(), fake, state_store)
+
+    assert len(records) == 1
+    assert records[0]["in_stock"] == 0
+    assert "oos-marker" in records[0]["evidence"]
+
+
+def test_whmcs_pid_scanner_rejects_cart_root_redirect(tmp_path) -> None:
+    html = """
+    <html><body>
+      <h2 class="product-title">Fast VPS</h2>
+      <div>$10.00 USD</div>
+      <button>Continue</button>
+    </body></html>
+    """
+
+    class CartRootClient:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, bool]] = []
+
+        def get(self, url: str, force_english: bool = True):  # noqa: ANN001
+            self.calls.append((url, force_english))
+            return SimpleNamespace(
+                ok=True,
+                requested_url=url,
+                final_url="https://example.com/cart.php",
+                status_code=200,
+                text=html,
+                headers={},
+                tier="direct",
+                elapsed_ms=10,
+                error=None,
+            )
+
+    fake = CartRootClient()
+    state_store = StateStore(tmp_path / "state.json")
+
+    records = scan_whmcs_pids(_site("CartRootWHMCS", "https://example.com/"), _scanner_config(), fake, state_store)
+
+    assert records == []
+
+
+def test_whmcs_pid_scanner_rejects_category_listing_redirect(tmp_path) -> None:
+    html = """
+    <html><body>
+      <h1>Shared VPS</h1>
+      <div class="product-box">
+        <div>$10.00 USD monthly</div>
+        <div>0 available</div>
+        <a href="/store/shared/plan-a">Order Now</a>
+      </div>
+    </body></html>
+    """
+
+    class CategoryListingClient:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, bool]] = []
+
+        def get(self, url: str, force_english: bool = True):  # noqa: ANN001
+            self.calls.append((url, force_english))
+            return SimpleNamespace(
+                ok=True,
+                requested_url=url,
+                final_url="https://example.com/store/shared",
+                status_code=200,
+                text=html,
+                headers={},
+                tier="direct",
+                elapsed_ms=10,
+                error=None,
+            )
+
+    fake = CategoryListingClient()
+    state_store = StateStore(tmp_path / "state.json")
+
+    records = scan_whmcs_pids(_site("CategoryWHMCS", "https://example.com/"), _scanner_config(), fake, state_store)
+
+    assert records == []
+
+
+def test_whmcs_pid_scanner_rejects_cart_add_listing_page(tmp_path) -> None:
+    html = """
+    <html><body>
+      <div class="product-box">
+        <h2>Plan A</h2>
+        <div>$10.00 USD monthly</div>
+        <div>0 available</div>
+        <a href="/store/shared/plan-a">Order Now</a>
+      </div>
+    </body></html>
+    """
+
+    class CartAddListingClient:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, bool]] = []
+
+        def get(self, url: str, force_english: bool = True):  # noqa: ANN001
+            self.calls.append((url, force_english))
+            return SimpleNamespace(
+                ok=True,
+                requested_url=url,
+                final_url=url,
+                status_code=200,
+                text=html,
+                headers={},
+                tier="direct",
+                elapsed_ms=10,
+                error=None,
+            )
+
+    fake = CartAddListingClient()
+    state_store = StateStore(tmp_path / "state.json")
+
+    records = scan_whmcs_pids(_site("CartAddListingWHMCS", "https://example.com/"), _scanner_config(), fake, state_store)
+
+    assert records == []
+
+
+def test_whmcs_pid_scanner_deduplicates_confproduct_content(tmp_path) -> None:
+    html = """
+    <html><body>
+      <div id="frmConfigureProduct">
+        <h2 class="product-title">Fast VPS</h2>
+        <div id="sectionCycles">Monthly $10.00 USD</div>
+        <button type="submit">Continue</button>
+      </div>
+    </body></html>
+    """
+
+    class DuplicateConfproductClient:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, bool]] = []
+
+        def get(self, url: str, force_english: bool = True):  # noqa: ANN001
+            self.calls.append((url, force_english))
+            conf_index = len(self.calls) - 1
+            return SimpleNamespace(
+                ok=True,
+                requested_url=url,
+                final_url=f"https://example.com/cart.php?a=confproduct&i={conf_index}",
+                status_code=200,
+                text=html,
+                headers={},
+                tier="direct",
+                elapsed_ms=10,
+                error=None,
+            )
+
+    fake = DuplicateConfproductClient()
+    state_store = StateStore(tmp_path / "state.json")
+    config = _scanner_config()
+    config["scanner"]["default_scan_bounds"]["whmcs_pid_max"] = 1
+    site = _site("DuplicateWHMCS", "https://example.com/")
+    site["scan_bounds"]["whmcs_pid_max"] = 1
+
+    records = scan_whmcs_pids(site, config, fake, state_store)
+
+    assert len(records) == 1
+    assert records[0]["pid"] == 0
+    assert len(fake.calls) == 2

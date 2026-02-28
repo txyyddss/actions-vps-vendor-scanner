@@ -49,6 +49,12 @@ def test_discovery_skip_blocked_auth_or_support_path() -> None:
     assert "blocked-path" in reason
 
 
+def test_discovery_skip_currency_query_url() -> None:
+    skip, reason = should_skip_discovery_url("https://example.com/store/vps/basic?currency=2")
+    assert skip is True
+    assert "blocked-query" in reason
+
+
 @pytest.mark.parametrize(
     "path",
     [
@@ -70,7 +76,7 @@ def test_discovery_skip_requested_blocked_paths(path: str) -> None:
 
 def test_discovery_skip_rp_announcement_route_url() -> None:
     url = (
-        "https://my.rfchost.com/index.php?currency=8&language=english&"
+        "https://my.rfchost.com/index.php?language=english&"
         "rp=%2Fannouncements%2F59%2FRFCHOST-%E6%97%A5%E6%9C%AC.html"
     )
     skip, reason = should_skip_discovery_url(url)

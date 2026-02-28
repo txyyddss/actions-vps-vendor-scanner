@@ -6,7 +6,7 @@ class FakeHttpClient:
     def get(self, url: str, force_english: bool = True):  # noqa: ARG002
         if "oos" in url:
             html = '<div class="message message-danger">Out of Stock</div>'
-            final_url = url
+            final_url = "https://example.com/store/cat/oos-plan"
         else:
             html = "<html><body><h2>Plan</h2></body></html>"
             final_url = "https://example.com/cart.php?a=confproduct&i=0"

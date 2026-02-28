@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
+import re
 from typing import Any
 from urllib.parse import urljoin
 
@@ -11,11 +12,23 @@ from src.misc.logger import get_logger
 from src.misc.url_normalizer import canonicalize_for_merge, normalize_url
 from src.hidden_scanner.scan_control import AdaptiveScanController
 from src.others.state_store import StateStore
-from src.parsers.common import in_stock_int
-from src.parsers.whmcs_parser import parse_whmcs_page
+from src.parsers.whmcs_parser import classify_whmcs_route, parse_whmcs_page
 
 
-_in_stock_int = in_stock_int
+def _normalize_signature_text(value: Any) -> str:
+    """Normalize extracted text for duplicate-signature comparisons."""
+    return re.sub(r"\s+", " ", str(value or "")).strip().lower()
+
+
+def _content_signature(parsed: Any) -> tuple[Any, ...]:
+    """Build a stable product-content signature for session-specific routes."""
+    return (
+        _normalize_signature_text(parsed.name_raw),
+        _normalize_signature_text(parsed.description_raw),
+        _normalize_signature_text(parsed.price_raw),
+        tuple(_normalize_signature_text(cycle) for cycle in parsed.cycles),
+        tuple(_normalize_signature_text(location) for location in parsed.locations_raw),
+    )
 
 
 def scan_whmcs_pids(
@@ -57,6 +70,7 @@ def scan_whmcs_pids(
     )
     records_by_url: dict[str, dict[str, Any]] = {}
     discovered_ids: list[int] = []
+    seen_product_signatures: set[tuple[Any, ...]] = set()
     batches_processed = 0
 
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
@@ -94,8 +108,32 @@ def scan_whmcs_pids(
                 discovered_new = False
                 if response and response.ok:
                     parsed = parse_whmcs_page(response.text, response.final_url)
-                    looks_like_product = parsed.is_product or parsed.in_stock is False
-                    if looks_like_product:
+                    route = classify_whmcs_route(response.final_url)
+                    evidence = set(parsed.evidence)
+                    accepted = False
+                    in_stock = -1
+
+                    if "confproduct-final-url" in evidence:
+                        accepted = True
+                        in_stock = 1
+                    elif route == "store_product" and "oos-marker" in evidence:
+                        accepted = True
+                        in_stock = 0
+                    elif route in {"store_product", "cart_add"} and "has-product-info" in evidence:
+                        accepted = True
+                        in_stock = 0 if "oos-marker" in evidence else 1
+
+                    duplicate_signature: tuple[Any, ...] | None = None
+                    if accepted:
+                        if route == "store_product":
+                            duplicate_signature = (
+                                "url",
+                                canonicalize_for_merge(normalize_url(response.final_url, force_english=True)),
+                            )
+                        else:
+                            duplicate_signature = ("content", *_content_signature(parsed))
+
+                    if accepted and duplicate_signature not in seen_product_signatures:
                         # Use requested_url (not final_url) because WHMCS redirects
                         # cart.php?a=add&pid=X to cart.php?a=confproduct&i=N which is
                         # session-dependent and not a stable product URL.
@@ -109,7 +147,7 @@ def scan_whmcs_pids(
                             "source_url": response.requested_url,
                             "name_raw": parsed.name_raw,
                             "description_raw": parsed.description_raw,
-                            "in_stock": _in_stock_int(parsed.in_stock),
+                            "in_stock": in_stock,
                             "type": "product",
                             "time_used": response.elapsed_ms,
                             "price_raw": parsed.price_raw,
@@ -121,6 +159,7 @@ def scan_whmcs_pids(
                         }
                         existing = records_by_url.get(canonical_url)
                         if existing is None:
+                            seen_product_signatures.add(duplicate_signature)
                             records_by_url[canonical_url] = record
                             discovered_ids.append(pid)
                             discovered_new = True
