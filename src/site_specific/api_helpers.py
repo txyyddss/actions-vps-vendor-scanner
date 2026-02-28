@@ -1,5 +1,6 @@
-from __future__ import annotations
 """Shared utilities for site-specific API scanners."""
+
+from __future__ import annotations
 
 import json
 import re

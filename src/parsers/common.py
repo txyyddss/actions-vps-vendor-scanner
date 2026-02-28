@@ -1,5 +1,6 @@
-from __future__ import annotations
 """Defines common data structures and types for parser outputs."""
+
+from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
@@ -8,6 +9,7 @@ from dataclasses import dataclass, field
 @dataclass(slots=True)
 class ParsedItem:
     """Represents ParsedItem."""
+
     platform: str
     is_product: bool
     is_category: bool
@@ -38,4 +40,6 @@ def bs4_text(node: object) -> str:
 
 def extract_prices(text: str) -> list[str]:
     """Extract price strings from text."""
-    return list(dict.fromkeys(re.findall(r"(?:[$€£¥]|HK\$)\s?[0-9][0-9,.]*\s?(?:USD|CAD|HKD)?", text)))
+    return list(
+        dict.fromkeys(re.findall(r"(?:[$€£¥]|HK\$)\s?[0-9][0-9,.]*\s?(?:USD|CAD|HKD)?", text))
+    )

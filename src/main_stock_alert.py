@@ -1,5 +1,6 @@
-from __future__ import annotations
 """Periodic job to check stock statuses of all known products and send Telegram alerts for restocks."""
+
+from __future__ import annotations
 
 import json
 from pathlib import Path

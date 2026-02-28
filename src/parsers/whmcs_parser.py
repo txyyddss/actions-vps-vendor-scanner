@@ -1,15 +1,15 @@
-from __future__ import annotations
 """A specialized HTML parser for extracting product details and stock status from WHMCS pages."""
 
+from __future__ import annotations
+
+import json
 import re
+from pathlib import Path
 from urllib.parse import parse_qsl, urlparse
 
 from bs4 import BeautifulSoup
 
 from src.parsers.common import ParsedItem, bs4_text, extract_prices
-
-import json
-from pathlib import Path
 
 _parser_cfg = {}
 try:
@@ -18,16 +18,21 @@ try:
 except Exception:
     pass
 
-OOS_MARKERS = tuple(_parser_cfg.get("oos_markers", (
-    "out of stock",
-    "sold out",
-    "currently unavailable",
-    "is currently unavailable",
-    "缺貨中",
-    "缺货中",
-    "無庫存",
-    "无库存",
-)))
+OOS_MARKERS = tuple(
+    _parser_cfg.get(
+        "oos_markers",
+        (
+            "out of stock",
+            "sold out",
+            "currently unavailable",
+            "is currently unavailable",
+            "缺貨中",
+            "缺货中",
+            "無庫存",
+            "无库存",
+        ),
+    )
+)
 
 LANGUAGE_QUERY_KEYS = {"language", "lang", "locale"}
 PRODUCT_LIKE_ROUTES = {"confproduct", "store_product", "cart_add"}
@@ -126,8 +131,7 @@ def classify_whmcs_route(final_url: str) -> str:
 
     if parsed.path.lower().endswith("cart.php"):
         meaningful = {
-            key: value for key, value in query_map.items()
-            if key not in LANGUAGE_QUERY_KEYS
+            key: value for key, value in query_map.items() if key not in LANGUAGE_QUERY_KEYS
         }
         if action == "add" and "pid" in meaningful:
             return "cart_add"
@@ -166,9 +170,18 @@ _extract_prices = extract_prices
 
 def _extract_cycles(soup: BeautifulSoup) -> list[str]:
     """Executes _extract_cycles logic."""
-    cycle_tokens = ("monthly", "quarterly", "semi-annually", "annually", "biennially", "triennially")
+    cycle_tokens = (
+        "monthly",
+        "quarterly",
+        "semi-annually",
+        "annually",
+        "biennially",
+        "triennially",
+    )
     cycles: list[str] = []
-    for node in soup.select("#sectionCycles, .check-cycle, #inputBillingcycle, select[name*=billing], select[name*=cycle]"):
+    for node in soup.select(
+        "#sectionCycles, .check-cycle, #inputBillingcycle, select[name*=billing], select[name*=cycle]"
+    ):
         text = _text(node).lower()
         for token in cycle_tokens:
             if token in text:
@@ -255,7 +268,9 @@ def parse_whmcs_page(html: str, final_url: str) -> ParsedItem:
     confproduct = route == "confproduct"
 
     product_links, category_links = _extract_links(soup)
-    alert_nodes = _unique_nodes(soup, [".message-danger", ".message", ".alert-danger", ".alert", ".errorbox"])
+    alert_nodes = _unique_nodes(
+        soup, [".message-danger", ".message", ".alert-danger", ".alert", ".errorbox"]
+    )
     product_signal_nodes = _unique_nodes(
         soup,
         [
@@ -308,7 +323,7 @@ def parse_whmcs_page(html: str, final_url: str) -> ParsedItem:
     description_raw = _text(description_node)[:5000] if description_node else ""
     # If description contains the name as prefix, strip it to avoid redundancy.
     if name_raw and description_raw.startswith(name_raw):
-        stripped = description_raw[len(name_raw):].lstrip("\n").strip()
+        stripped = description_raw[len(name_raw) :].lstrip("\n").strip()
         if stripped:
             description_raw = stripped
     prices = _extract_prices(full_text)
@@ -318,10 +333,14 @@ def parse_whmcs_page(html: str, final_url: str) -> ParsedItem:
 
     has_order_form = bool(soup.select_one("#frmConfigureProduct"))
     has_configurable_options = bool(
-        soup.select_one("#sectionCycles, .check-cycle, #inputBillingcycle, select[name*=billing], select[name*=cycle]")
+        soup.select_one(
+            "#sectionCycles, .check-cycle, #inputBillingcycle, select[name*=billing], select[name*=cycle]"
+        )
     )
     has_product_description = bool(
-        soup.select_one("#productDescription, .product-description, .product-info .description, .product-info")
+        soup.select_one(
+            "#productDescription, .product-description, .product-info .description, .product-info"
+        )
     )
     has_continue_cta = False
     for root in product_signal_nodes:
@@ -335,7 +354,9 @@ def parse_whmcs_page(html: str, final_url: str) -> ParsedItem:
 
     has_product_info = False
     if route in PRODUCT_LIKE_ROUTES:
-        name_signal = bool(product_title or (route in {"confproduct", "store_product"} and name_raw))
+        name_signal = bool(
+            product_title or (route in {"confproduct", "store_product"} and name_raw)
+        )
         has_product_info = any(
             [
                 name_signal,
@@ -356,8 +377,12 @@ def parse_whmcs_page(html: str, final_url: str) -> ParsedItem:
     else:
         in_stock = None
 
-    is_product = route in {"confproduct", "store_product"} or (route == "cart_add" and has_product_info)
-    is_category = route == "store_category" or (route in {"cart_root", "other"} and bool(category_links or product_links))
+    is_product = route in {"confproduct", "store_product"} or (
+        route == "cart_add" and has_product_info
+    )
+    is_category = route == "store_category" or (
+        route in {"cart_root", "other"} and bool(category_links or product_links)
+    )
 
     evidence: list[str] = []
     if confproduct:

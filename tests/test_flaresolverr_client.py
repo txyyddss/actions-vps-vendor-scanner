@@ -47,6 +47,33 @@ def test_flaresolverr_error_response(monkeypatch) -> None:
     assert call_count["count"] == 1
 
 
+def test_flaresolverr_no_challenge_with_solution_is_success(monkeypatch) -> None:
+    client = FlareSolverrClient("http://127.0.0.1:8191/v1")
+    monkeypatch.setattr(client, "_get_or_create_session", lambda _domain: "sess-1")
+
+    monkeypatch.setattr(
+        client,
+        "_post",
+        lambda _payload: {
+            "status": "error",
+            "message": "Challenge not detected!",
+            "solution": {
+                "status": 200,
+                "url": "https://target.example/store",
+                "response": "<html>ok</html>",
+                "cookies": [],
+            },
+        },
+    )
+
+    result = client.get("https://target.example/store", domain="target.example")
+
+    assert result.ok is True
+    assert result.status_code == 200
+    assert result.final_url == "https://target.example/store"
+    assert result.body == "<html>ok</html>"
+
+
 def test_flaresolverr_retries_timeout_then_succeeds(monkeypatch) -> None:
     client = FlareSolverrClient(
         "http://127.0.0.1:8191/v1",
@@ -75,7 +102,10 @@ def test_flaresolverr_retries_timeout_then_succeeds(monkeypatch) -> None:
         }
 
     sleep_calls: list[float] = []
-    monkeypatch.setattr("src.misc.flaresolverr_client.time.sleep", lambda seconds: sleep_calls.append(seconds))
+    monkeypatch.setattr(
+        "src.misc.flaresolverr_client.time.sleep",
+        lambda seconds: sleep_calls.append(seconds),
+    )
     monkeypatch.setattr(client, "_post", fake_post)
 
     result = client.get("https://target.example/store", domain="target.example")
@@ -109,7 +139,10 @@ def test_flaresolverr_retries_retriable_error_response(monkeypatch) -> None:
     ]
 
     sleep_calls: list[float] = []
-    monkeypatch.setattr("src.misc.flaresolverr_client.time.sleep", lambda seconds: sleep_calls.append(seconds))
+    monkeypatch.setattr(
+        "src.misc.flaresolverr_client.time.sleep",
+        lambda seconds: sleep_calls.append(seconds),
+    )
     monkeypatch.setattr(client, "_post", lambda _payload: responses.pop(0))
 
     result = client.get("https://target.example/store", domain="target.example")
@@ -175,7 +208,10 @@ def test_flaresolverr_retries_queue_depth_error_response(monkeypatch) -> None:
     ]
 
     sleep_calls: list[float] = []
-    monkeypatch.setattr("src.misc.flaresolverr_client.time.sleep", lambda seconds: sleep_calls.append(seconds))
+    monkeypatch.setattr(
+        "src.misc.flaresolverr_client.time.sleep",
+        lambda seconds: sleep_calls.append(seconds),
+    )
     monkeypatch.setattr(client, "_post", lambda _payload: responses.pop(0))
 
     result = client.get("https://target.example/store", domain="target.example")

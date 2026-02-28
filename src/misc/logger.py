@@ -1,5 +1,6 @@
-from __future__ import annotations
 """Configures standardized application logging with optional JSON formatting."""
+
+from __future__ import annotations
 
 import json
 import logging
@@ -47,4 +48,3 @@ def setup_logging(level: str = "INFO", json_logs: bool = False) -> None:
 def get_logger(name: str) -> logging.Logger:
     """Executes get_logger logic."""
     return logging.getLogger(name)
-

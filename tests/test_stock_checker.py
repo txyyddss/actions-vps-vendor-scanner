@@ -24,8 +24,22 @@ class FakeHttpClient:
 
 def test_stock_checker_and_restock_merge() -> None:
     products = [
-        {"product_id": "1", "canonical_url": "https://x/in", "platform": "WHMCS", "in_stock": -1, "site": "Test", "name_raw": "Plan"},
-        {"product_id": "2", "canonical_url": "https://x/oos", "platform": "WHMCS", "in_stock": -1, "site": "Test", "name_raw": "Plan2"},
+        {
+            "product_id": "1",
+            "canonical_url": "https://x/in",
+            "platform": "WHMCS",
+            "in_stock": -1,
+            "site": "Test",
+            "name_raw": "Plan",
+        },
+        {
+            "product_id": "2",
+            "canonical_url": "https://x/oos",
+            "platform": "WHMCS",
+            "in_stock": -1,
+            "site": "Test",
+            "name_raw": "Plan2",
+        },
     ]
     rows = check_stock(products, FakeHttpClient(), max_workers=2)
     by_url = {row["canonical_url"]: row for row in rows}

@@ -1,5 +1,6 @@
-from __future__ import annotations
 """Validates live stock status for products against their latest webpage state."""
+
+from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
@@ -28,12 +29,17 @@ def _in_stock_from_parser(
         return fallback, evidence, parsed.cycles, parsed.locations_raw, parsed.price_raw
 
     lowered = html.lower()
-    if any(token in lowered for token in ("out of stock", "currently unavailable", "sold out", "缺貨中", "缺货中")):
+    if any(
+        token in lowered
+        for token in ("out of stock", "currently unavailable", "sold out", "缺貨中", "缺货中")
+    ):
         return 0, ["generic-oos-marker"], [], [], ""
     return fallback, ["special-fallback"], [], [], ""
 
 
-def check_stock(products: list[dict[str, Any]], http_client: HttpClient, max_workers: int = 12) -> list[dict[str, Any]]:
+def check_stock(
+    products: list[dict[str, Any]], http_client: HttpClient, max_workers: int = 12
+) -> list[dict[str, Any]]:
     """Check live stock status for all products."""
     logger = get_logger("stock_checker")
     now = datetime.now(timezone.utc).isoformat()
@@ -84,15 +90,17 @@ def check_stock(products: list[dict[str, Any]], http_client: HttpClient, max_wor
             except Exception as exc:  # noqa: BLE001
                 item = future_map[future]
                 logger.warning("stock check failed url=%s error=%s", item.get("canonical_url"), exc)
-                rows.append({
-                    "product_id": item.get("product_id"),
-                    "canonical_url": item.get("canonical_url"),
-                    "site": item.get("site", ""),
-                    "name_raw": item.get("name_raw", ""),
-                    "in_stock": -1,
-                    "checked_at": now,
-                    "evidence": [f"check-error:{exc}"],
-                })
+                rows.append(
+                    {
+                        "product_id": item.get("product_id"),
+                        "canonical_url": item.get("canonical_url"),
+                        "site": item.get("site", ""),
+                        "name_raw": item.get("name_raw", ""),
+                        "in_stock": -1,
+                        "checked_at": now,
+                        "evidence": [f"check-error:{exc}"],
+                    }
+                )
 
     logger.info("checked stock rows=%s", len(rows))
     return rows

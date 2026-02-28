@@ -1,5 +1,6 @@
-from __future__ import annotations
 """A resilient HTTP fetcher with tiered fallbacks: direct HTTP, FlareSolverr, and Browser."""
+
+from __future__ import annotations
 
 import threading
 import time
@@ -10,13 +11,19 @@ import httpx
 
 from src.misc.flaresolverr_client import FlareSolverrClient
 from src.misc.logger import get_logger
-from src.misc.retry_rate_limit import RETRIABLE_STATUS_CODES, BackoffPolicy, CircuitBreaker, DomainRateLimiter, should_retry_status
+from src.misc.retry_rate_limit import (
+    RETRIABLE_STATUS_CODES,
+    BackoffPolicy,
+    CircuitBreaker,
+    DomainRateLimiter,
+)
 from src.misc.url_normalizer import extract_domain, normalize_url
 
 
 @dataclass(slots=True)
 class FetchResult:
     """Represents FetchResult."""
+
     ok: bool
     requested_url: str
     final_url: str
@@ -86,7 +93,9 @@ class HttpClient:
         self.flaresolverr_enabled = bool(flaresolverr_cfg.get("enabled", True))
         self.cookie_reuse_enabled = bool(flaresolverr_cfg.get("reuse_cookies", True))
         configured_cookie_ttl = int(
-            flaresolverr_cfg.get("cookie_ttl_seconds", int(flaresolverr_cfg.get("session_ttl_minutes", 30)) * 60)
+            flaresolverr_cfg.get(
+                "cookie_ttl_seconds", int(flaresolverr_cfg.get("session_ttl_minutes", 30)) * 60
+            )
         )
         self.cookie_reuse_ttl_seconds = max(60, configured_cookie_ttl)
         self._cookie_lock = threading.Lock()
@@ -104,7 +113,9 @@ class HttpClient:
         if not normalized_cookie_domain:
             return True
         request_lower = request_domain.lower()
-        return request_lower == normalized_cookie_domain or request_lower.endswith(f".{normalized_cookie_domain}")
+        return request_lower == normalized_cookie_domain or request_lower.endswith(
+            f".{normalized_cookie_domain}"
+        )
 
     def _get_cached_cookie_header(self, domain: str) -> str | None:
         """Executes _get_cached_cookie_header logic."""
@@ -186,11 +197,13 @@ class HttpClient:
         return cookies
 
     @staticmethod
-    def _is_cloudflare_like(status_code: int | None, text: str, headers: dict[str, str] | None = None) -> bool:
+    def _is_cloudflare_like(
+        status_code: int | None, text: str, headers: dict[str, str] | None = None
+    ) -> bool:
         """Executes _is_cloudflare_like logic."""
         lower = text.lower()
         header_map = {str(k).lower(): str(v).lower() for k, v in (headers or {}).items()}
-        markers = (
+        strong_markers = (
             "just a moment",
             "attention required",
             "cf-chl",
@@ -201,21 +214,30 @@ class HttpClient:
             "cdn-cgi/challenge-platform",
             "checking your browser before accessing",
             "please stand by, while we are checking your browser",
-            "enable javascript and cookies to continue",
-            "to work with the site requires support for javascript and cookies",
             "ddos protection by cloudflare",
         )
-        has_marker = any(marker in lower for marker in markers)
-        has_cloudflare_headers = bool(header_map.get("cf-ray")) or "cloudflare" in header_map.get("server", "")
+        weak_markers = (
+            "enable javascript and cookies to continue",
+            "to work with the site requires support for javascript and cookies",
+        )
+        has_strong_marker = any(marker in lower for marker in strong_markers)
+        has_weak_marker = any(marker in lower for marker in weak_markers)
+        has_cloudflare_headers = bool(header_map.get("cf-ray")) or "cloudflare" in header_map.get(
+            "server", ""
+        )
         if "challenge-platform" in lower or "cdn-cgi/challenge-platform" in lower:
             return True
-        if status_code in {403, 429, 503} and (has_marker or has_cloudflare_headers):
+        if status_code in {403, 429, 503} and (
+            has_strong_marker or has_weak_marker or has_cloudflare_headers
+        ):
             return True
-        if status_code == 200 and has_marker:
+        if status_code == 200 and has_strong_marker:
             return True
         return False
 
-    def _direct_get(self, url: str, proxy_url: str | None = None, cookie_header: str | None = None) -> FetchResult:
+    def _direct_get(
+        self, url: str, proxy_url: str | None = None, cookie_header: str | None = None
+    ) -> FetchResult:
         """Executes _direct_get logic."""
         start = time.perf_counter()
         headers = {"User-Agent": self.user_agent, "Accept-Language": self.accept_language}
@@ -232,8 +254,18 @@ class HttpClient:
             if proxy_url:
                 client_kwargs["proxy"] = proxy_url
 
-            with httpx.Client(**client_kwargs) as client:
-                response = client.get(url)
+            try:
+                with httpx.Client(**client_kwargs) as client:
+                    response = client.get(url)
+            except ImportError:
+                if not client_kwargs.get("http2"):
+                    raise
+                client_kwargs["http2"] = False
+                self.logger.debug(
+                    "http2 extras unavailable for url=%s; retrying direct fetch over HTTP/1.1", url
+                )
+                with httpx.Client(**client_kwargs) as client:
+                    response = client.get(url)
 
             response_domain = extract_domain(str(response.url)) or extract_domain(url)
             self._store_cookies(response_domain, self._response_cookies(response))
@@ -291,7 +323,9 @@ class HttpClient:
         for attempt in range(1, self.backoff.max_attempts + 1):
             self.rate_limiter.wait_for_slot(normalized_url)
             cached_cookie_header = self._get_cached_cookie_header(domain)
-            direct = self._direct_get(url=normalized_url, proxy_url=active_proxy, cookie_header=cached_cookie_header)
+            direct = self._direct_get(
+                url=normalized_url, proxy_url=active_proxy, cookie_header=cached_cookie_header
+            )
             self.logger.debug(
                 "fetch direct attempt=%s url=%s status=%s elapsed_ms=%s",
                 attempt,
@@ -301,21 +335,36 @@ class HttpClient:
             )
 
             if direct.ok and direct.status_code is not None:
-                challenge_like = self._is_cloudflare_like(direct.status_code, direct.text, direct.headers)
+                challenge_like = self._is_cloudflare_like(
+                    direct.status_code, direct.text, direct.headers
+                )
                 if direct.status_code == 429:
-                    self.rate_limiter.apply_cooldown(normalized_url, self.ratelimit_cooldown_seconds)
+                    self.rate_limiter.apply_cooldown(
+                        normalized_url, self.ratelimit_cooldown_seconds
+                    )
                 elif not challenge_like and direct.status_code < 500:
                     self.circuit_breaker.record_success(domain)
                     return direct
                 else:
-                    reason = "cloudflare-like-challenge" if challenge_like else f"status={direct.status_code}"
-                    self.logger.debug("direct tier fallback url=%s attempt=%s reason=%s", normalized_url, attempt, reason)
+                    reason = (
+                        "cloudflare-like-challenge"
+                        if challenge_like
+                        else f"status={direct.status_code}"
+                    )
+                    self.logger.debug(
+                        "direct tier fallback url=%s attempt=%s reason=%s",
+                        normalized_url,
+                        attempt,
+                        reason,
+                    )
                     if challenge_like and cached_cookie_header:
                         self._clear_cached_cookies(domain)
 
             if self.flaresolverr_enabled:
                 fs_start = time.perf_counter()
-                fs = self.flaresolverr.get(url=normalized_url, domain=domain, proxy_url=active_proxy)
+                fs = self.flaresolverr.get(
+                    url=normalized_url, domain=domain, proxy_url=active_proxy
+                )
                 fs_elapsed = int((time.perf_counter() - fs_start) * 1000)
                 self.logger.debug(
                     "fetch flaresolverr attempt=%s url=%s ok=%s status=%s",
@@ -355,10 +404,18 @@ class HttpClient:
             last_error = last_error or direct.error or f"status={direct.status_code}"
 
         self.circuit_breaker.record_failure(domain)
-        if last_error and ("Challenge not detected" in last_error or "500 Internal" in last_error):
-            self.logger.debug("fetch failed completely url=%s reason=%s", normalized_url, last_error or "fetch-failed")
+        if last_error and "500 Internal" in last_error:
+            self.logger.debug(
+                "fetch failed completely url=%s reason=%s",
+                normalized_url,
+                last_error or "fetch-failed",
+            )
         else:
-            self.logger.error("fetch failed completely url=%s reason=%s", normalized_url, last_error or "fetch-failed")
+            self.logger.error(
+                "fetch failed completely url=%s reason=%s",
+                normalized_url,
+                last_error or "fetch-failed",
+            )
 
         return FetchResult(
             ok=False,

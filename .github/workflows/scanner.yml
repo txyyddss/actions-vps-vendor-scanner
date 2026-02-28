@@ -96,6 +96,18 @@ jobs:
           name: category-output
           path: data/tmp/category.json
           if-no-files-found: warn
+      - name: Ensure state artifact exists
+        run: |
+          mkdir -p data
+          if [ ! -f data/state.json ]; then
+            printf '{"sites": {}, "updated_at": null}\n' > data/state.json
+          fi
+      - name: Upload state artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: category-state
+          path: data/state.json
+          if-no-files-found: error
 
   product_scanner:
     runs-on: ubuntu-latest
@@ -140,6 +152,18 @@ jobs:
           name: product-output
           path: data/tmp/product.json
           if-no-files-found: warn
+      - name: Ensure state artifact exists
+        run: |
+          mkdir -p data
+          if [ ! -f data/state.json ]; then
+            printf '{"sites": {}, "updated_at": null}\n' > data/state.json
+          fi
+      - name: Upload state artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: product-state
+          path: data/state.json
+          if-no-files-found: error
 
   merge_notify:
     runs-on: ubuntu-latest
@@ -170,6 +194,45 @@ jobs:
         with:
           name: product-output
           path: data/tmp
+      - name: Download category state artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: category-state
+          path: data/tmp/state/category
+      - name: Download product state artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: product-state
+          path: data/tmp/state/product
+      - name: Merge state artifacts
+        run: |
+          python - <<'PY'
+          import json
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          payload = {"sites": {}, "updated_at": None}
+          latest = None
+          sources = [
+              Path("data/tmp/state/category/state.json"),
+              Path("data/tmp/state/product/state.json"),
+          ]
+
+          for source in sources:
+              if not source.exists():
+                  continue
+              data = json.loads(source.read_text(encoding="utf-8"))
+              for site_name, state in data.get("sites", {}).items():
+                  payload["sites"].setdefault(site_name, {}).update(state)
+              updated_at = data.get("updated_at")
+              if updated_at and (latest is None or updated_at > latest):
+                  latest = updated_at
+
+          payload["updated_at"] = latest or datetime.now(timezone.utc).isoformat()
+          output = Path("data/state.json")
+          output.parent.mkdir(parents=True, exist_ok=True)
+          output.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+          PY
       - name: Run merge + dashboard
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -181,7 +244,10 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/products.json data/state.json web
+          git add data/products.json web
+          if [ -f data/state.json ]; then
+            git add data/state.json
+          fi
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else

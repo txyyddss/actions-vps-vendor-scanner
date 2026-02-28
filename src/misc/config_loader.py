@@ -1,5 +1,6 @@
-from __future__ import annotations
 """Handles loading and validating JSON configuration files."""
+
+from __future__ import annotations
 
 import json
 from pathlib import Path

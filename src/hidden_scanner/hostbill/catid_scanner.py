@@ -1,14 +1,15 @@
-from __future__ import annotations
 """Scans HostBill instances for hidden categories using incremental IDs."""
+
+from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 from urllib.parse import urljoin
 
+from src.hidden_scanner.scan_control import AdaptiveScanController
 from src.misc.http_client import HttpClient
 from src.misc.logger import get_logger
 from src.misc.url_normalizer import normalize_url
-from src.hidden_scanner.scan_control import AdaptiveScanController
 from src.others.state_store import StateStore
 from src.parsers.hostbill_parser import parse_hostbill_page
 
@@ -27,7 +28,11 @@ def scan_hostbill_catids(
 
     scanner_cfg = config.get("scanner", {})
     defaults = scanner_cfg.get("default_scan_bounds", {})
-    hard_max = int(site.get("scan_bounds", {}).get("hostbill_catid_max", defaults.get("hostbill_catid_max", 400)))
+    hard_max = int(
+        site.get("scan_bounds", {}).get(
+            "hostbill_catid_max", defaults.get("hostbill_catid_max", 400)
+        )
+    )
     initial_floor = int(scanner_cfg.get("initial_scan_floor", 80))
     tail_window = int(scanner_cfg.get("stop_tail_window", 60))
     inactive_streak_limit = int(
@@ -73,7 +78,9 @@ def scan_hostbill_catids(
 
             future_map = {
                 # Use FlareSolverr to handle challenge-protected sites.
-                pool.submit(http_client.get, urljoin(base_url, f"?cmd=cart&cat_id={cat_id}"), True): cat_id
+                pool.submit(
+                    http_client.get, urljoin(base_url, f"?cmd=cart&cat_id={cat_id}"), True
+                ): cat_id
                 for cat_id in batch_ids
             }
             responses_by_id: dict[int, Any] = {}
@@ -82,7 +89,12 @@ def scan_hostbill_catids(
                 try:
                     responses_by_id[cat_id] = future.result()
                 except Exception as exc:  # noqa: BLE001
-                    logger.warning("hostbill catid fetch failed site=%s cat_id=%s error=%s", site_name, cat_id, exc)
+                    logger.warning(
+                        "hostbill catid fetch failed site=%s cat_id=%s error=%s",
+                        site_name,
+                        cat_id,
+                        exc,
+                    )
 
             for cat_id in batch_ids:
                 response = responses_by_id.get(cat_id)
@@ -122,17 +134,19 @@ def scan_hostbill_catids(
                                     "platform": "HostBill",
                                     "scan_type": "category_scanner",
                                     "cat_id": cat_id,
-                                    "canonical_url": normalize_url(urljoin(response.final_url, plink), force_english=True),
+                                    "canonical_url": normalize_url(
+                                        urljoin(response.final_url, plink), force_english=True
+                                    ),
                                     "source_url": response.requested_url,
                                     "name_raw": "",
                                     "description_raw": "",
                                     "in_stock": -1,
                                     "type": "product",
                                     "time_used": response.elapsed_ms,
-                                    "evidence": parsed.evidence + ["category-product-link", f"tier:{response.tier}"],
+                                    "evidence": parsed.evidence
+                                    + ["category-product-link", f"tier:{response.tier}"],
                                 }
                             )
-
 
                 if planner.mark(cat_id, discovered_new):
                     break
@@ -141,7 +155,9 @@ def scan_hostbill_catids(
                 break
 
     if discovered_ids:
-        state_store.update_site_state(site_name, {"hostbill_catid_highwater": max(max(discovered_ids), learned_high)})
+        state_store.update_site_state(
+            site_name, {"hostbill_catid_highwater": max(max(discovered_ids), learned_high)}
+        )
 
     logger.info(
         "hostbill catid scan site=%s discovered=%s unique=%s scanned_to=%s active_max=%s stop=%s",

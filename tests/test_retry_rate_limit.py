@@ -1,6 +1,11 @@
 import time
 
-from src.misc.retry_rate_limit import BackoffPolicy, CircuitBreaker, DomainRateLimiter, should_retry_status
+from src.misc.retry_rate_limit import (
+    BackoffPolicy,
+    CircuitBreaker,
+    DomainRateLimiter,
+    should_retry_status,
+)
 
 
 def test_should_retry_status() -> None:
@@ -10,7 +15,9 @@ def test_should_retry_status() -> None:
 
 
 def test_backoff_policy_is_increasing() -> None:
-    policy = BackoffPolicy(max_attempts=3, base_delay_seconds=0.01, max_delay_seconds=0.2, jitter_seconds=0.0)
+    policy = BackoffPolicy(
+        max_attempts=3, base_delay_seconds=0.01, max_delay_seconds=0.2, jitter_seconds=0.0
+    )
     assert policy.delay_for_attempt(1) < policy.delay_for_attempt(2)
 
 
@@ -33,4 +40,3 @@ def test_domain_rate_limiter_cooldown() -> None:
     limiter.wait_for_slot(url)
     elapsed = time.perf_counter() - start
     assert elapsed >= 0.18
-

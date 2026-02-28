@@ -1,5 +1,6 @@
-from __future__ import annotations
 """Processes GitHub issues to add, edit, or delete monitored sites automatically."""
+
+from __future__ import annotations
 
 import argparse
 import copy
@@ -22,7 +23,9 @@ from src.site_specific.acck_api import scan_acck_api
 from src.site_specific.akile_api import scan_akile_api
 
 _GLOBAL_CONFIG = load_config("config/config.json")
-TELEGRAM_CHANNEL_URL = _GLOBAL_CONFIG.get("telegram", {}).get("channel_url", "https://t.me/tx_stock_monitor")
+TELEGRAM_CHANNEL_URL = _GLOBAL_CONFIG.get("telegram", {}).get(
+    "channel_url", "https://t.me/tx_stock_monitor"
+)
 
 
 def _parse_markdown_form(body: str) -> dict[str, str]:
@@ -158,15 +161,21 @@ def _build_validation_config(config: dict[str, Any], expected: int) -> dict[str,
     defaults = scanner_cfg.setdefault("default_scan_bounds", {})
 
     # Expand scan window for validation and allow reaching expected thresholds.
-    scanner_cfg["initial_scan_floor"] = max(int(scanner_cfg.get("initial_scan_floor", 80)), expected * 4)
-    scanner_cfg["stop_tail_window"] = max(int(scanner_cfg.get("stop_tail_window", 60)), expected * 2)
+    scanner_cfg["initial_scan_floor"] = max(
+        int(scanner_cfg.get("initial_scan_floor", 80)), expected * 4
+    )
+    scanner_cfg["stop_tail_window"] = max(
+        int(scanner_cfg.get("stop_tail_window", 60)), expected * 2
+    )
 
     defaults["whmcs_pid_max"] = max(int(defaults.get("whmcs_pid_max", 2000)), expected * 10)
     defaults["hostbill_pid_max"] = max(int(defaults.get("hostbill_pid_max", 2500)), expected * 10)
     return test_config
 
 
-def _run_site_product_count_test(site_entry: dict[str, Any], expected: int, config: dict[str, Any]) -> tuple[int, str]:
+def _run_site_product_count_test(
+    site_entry: dict[str, Any], expected: int, config: dict[str, Any]
+) -> tuple[int, str]:
     """Executes _run_site_product_count_test logic."""
     test_config = _build_validation_config(config, expected)
     http_client = HttpClient(test_config)
@@ -190,11 +199,16 @@ def _run_site_product_count_test(site_entry: dict[str, Any], expected: int, conf
     return 0, "unsupported-category"
 
 
-def _apply_site_change(action: str, site_name: str, new_site: dict[str, Any], sites_path: str = "config/sites.json") -> tuple[bool, str]:
+def _apply_site_change(
+    action: str, site_name: str, new_site: dict[str, Any], sites_path: str = "config/sites.json"
+) -> tuple[bool, str]:
     """Executes _apply_site_change logic."""
     payload = load_json(sites_path)
     sites = payload.setdefault("sites", {}).setdefault("site", [])
-    existing_idx = next((idx for idx, site in enumerate(sites) if str(site.get("name", "")).strip() == site_name), -1)
+    existing_idx = next(
+        (idx for idx, site in enumerate(sites) if str(site.get("name", "")).strip() == site_name),
+        -1,
+    )
 
     if action == "delete":
         if existing_idx == -1:
@@ -239,12 +253,20 @@ def main() -> None:
     issue_number = args.issue_number or int(issue.get("number", 0))
     title = str(issue.get("title", ""))
     body = str(issue.get("body", ""))
-    labels = [str(label.get("name", "")).lower() for label in issue.get("labels", []) if isinstance(label, dict)]
+    labels = [
+        str(label.get("name", "")).lower()
+        for label in issue.get("labels", [])
+        if isinstance(label, dict)
+    ]
     fields = _parse_markdown_form(body)
     telegram = TelegramSender(config.get("telegram", {}))
 
     action_hint = fields.get("action", "").strip().lower()
-    is_site_change = "site-change" in labels or action_hint in {"add", "edit", "delete"} or "[site change]" in title.lower()
+    is_site_change = (
+        "site-change" in labels
+        or action_hint in {"add", "edit", "delete"}
+        or "[site change]" in title.lower()
+    )
     if is_site_change:
         ok, reason = _validate_site_payload(fields)
         if not ok:
@@ -256,7 +278,9 @@ def main() -> None:
                 ),
                 close_invalid=True,
             )
-            telegram.send_run_stats("Issue Processor", {"issue": issue_number, "status": "invalid", "reason": reason})
+            telegram.send_run_stats(
+                "Issue Processor", {"issue": issue_number, "status": "invalid", "reason": reason}
+            )
             return
 
         action = fields.get("action", "").strip().lower()
@@ -275,7 +299,9 @@ def main() -> None:
                     "The site was **not** added/updated. Please verify URL/platform/expectation and submit again.\n\n"
                     f"Telegram channel: {TELEGRAM_CHANNEL_URL}"
                 )
-                _comment_and_maybe_close(issue_number=issue_number, message=rejection, close_invalid=False)
+                _comment_and_maybe_close(
+                    issue_number=issue_number, message=rejection, close_invalid=False
+                )
                 telegram.send_run_stats(
                     "Issue Processor",
                     {
@@ -298,7 +324,9 @@ def main() -> None:
                 ),
                 close_invalid=True,
             )
-            telegram.send_run_stats("Issue Processor", {"issue": issue_number, "status": "rejected", "reason": message})
+            telegram.send_run_stats(
+                "Issue Processor", {"issue": issue_number, "status": "rejected", "reason": message}
+            )
             return
 
         _comment_and_maybe_close(
@@ -309,7 +337,9 @@ def main() -> None:
             ),
             close_invalid=False,
         )
-        telegram.send_run_stats("Issue Processor", {"issue": issue_number, "status": "applied", "message": message})
+        telegram.send_run_stats(
+            "Issue Processor", {"issue": issue_number, "status": "applied", "message": message}
+        )
         return
 
     # Feature/Bug issues -> notify only.

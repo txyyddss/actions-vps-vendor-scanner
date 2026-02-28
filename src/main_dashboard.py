@@ -1,5 +1,6 @@
-from __future__ import annotations
 """Generates the static HTML dashboard from the latest product data."""
+
+from __future__ import annotations
 
 import json
 from pathlib import Path

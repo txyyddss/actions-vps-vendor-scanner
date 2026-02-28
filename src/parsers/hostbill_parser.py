@@ -1,14 +1,15 @@
-from __future__ import annotations
 """A specialized HTML parser for extracting product details and stock status from HostBill pages."""
 
+from __future__ import annotations
+
+import json
 import re
+from pathlib import Path
+from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
 
 from src.parsers.common import ParsedItem, bs4_text, extract_prices
-
-import json
-from pathlib import Path
 
 _parser_cfg = {}
 try:
@@ -17,12 +18,19 @@ try:
 except Exception:
     pass
 
-OOS_MARKERS = tuple(_parser_cfg.get("oos_markers", (
-    "out of stock",
-    "currently unavailable",
-    "unavailable",
-    "no services yet",
-)))
+OOS_MARKERS = tuple(
+    _parser_cfg.get(
+        "oos_markers",
+        (
+            "out of stock",
+            "currently unavailable",
+            "unavailable",
+            "no services yet",
+        ),
+    )
+)
+NO_SERVICES_MARKER = "no services yet"
+ACTIVE_OOS_MARKERS = tuple(marker for marker in OOS_MARKERS if marker.lower() != NO_SERVICES_MARKER)
 
 NON_PRODUCT_REDIRECT_MARKERS = ("/checkdomain/",)
 
@@ -35,14 +43,23 @@ _extract_prices = extract_prices
 
 def _extract_cycles(text: str) -> list[str]:
     """Executes _extract_cycles logic."""
-    cycle_tokens = ("monthly", "quarterly", "semi-annually", "annually", "biennially", "triennially")
+    cycle_tokens = (
+        "monthly",
+        "quarterly",
+        "semi-annually",
+        "annually",
+        "biennially",
+        "triennially",
+    )
     cycles = [token.title() for token in cycle_tokens if token in text.lower()]
     return list(dict.fromkeys(cycles))
 
 
 def _extract_inline_links(html: str) -> list[str]:
     """Extract cart-like URLs from raw HTML/script blobs."""
-    pattern = re.compile(r"(https?://[^'\"\s<>]+|/index\.php\?/cart/[^'\"\s<>]+|/cart/[^'\"\s<>]+)", re.IGNORECASE)
+    pattern = re.compile(
+        r"(https?://[^'\"\s<>]+|/index\.php\?/cart/[^'\"\s<>]+|/cart/[^'\"\s<>]+)", re.IGNORECASE
+    )
     return list(dict.fromkeys(match.group(1) for match in pattern.finditer(html)))
 
 
@@ -90,32 +107,75 @@ def _extract_category_links(soup: BeautifulSoup, html: str) -> list[str]:
     return list(dict.fromkeys(links))
 
 
+def _strip_noscript(soup: BeautifulSoup) -> BeautifulSoup:
+    """Remove noscript boilerplate before extracting parser signals."""
+    for node in soup.select("noscript"):
+        node.decompose()
+    return soup
+
+
+def _hostbill_cart_segments_from_url(final_url: str) -> list[str]:
+    """Extract cart-route segments from HostBill pseudo-route URLs."""
+    parsed = urlparse(final_url)
+    route_source = ""
+    if parsed.query.startswith("/"):
+        route_source = parsed.query
+    elif "/cart/" in parsed.path.lower():
+        route_source = parsed.path
+    if not route_source:
+        return []
+
+    route_source = route_source.split("&", 1)[0]
+    cart_marker = "/cart/"
+    cart_index = route_source.lower().find(cart_marker)
+    if cart_index == -1:
+        return []
+
+    route_tail = route_source[cart_index + len(cart_marker) :].strip("/")
+    if not route_tail:
+        return []
+    return [segment for segment in route_tail.split("/") if segment]
+
+
 def parse_hostbill_page(html: str, final_url: str) -> ParsedItem:
     """Executes parse_hostbill_page logic."""
-    soup = BeautifulSoup(html, "lxml")
+    soup = _strip_noscript(BeautifulSoup(html, "lxml"))
+    cleaned_html = str(soup)
     full_text = soup.get_text(" ", strip=True)
     lowered = full_text.lower()
     final_lower = final_url.lower()
 
-    has_oos_marker = any(marker in lowered for marker in OOS_MARKERS)
-    has_js_errors = "var errors" in html.lower() and any(marker in html.lower() for marker in OOS_MARKERS)
-    has_disabled_oos_button = bool(
-        soup.select_one("button[disabled]") and "out of stock" in _text(soup.select_one("button[disabled]")).lower()
-    )
-    has_no_services = "no services yet" in lowered
-    has_order_step = "step=3" in final_lower
-    has_add_id = "action=add&id=" in final_lower
-
     # Product validity signals for HostBill are multi-source and theme dependent.
     is_non_product_redirect = any(marker in final_lower for marker in NON_PRODUCT_REDIRECT_MARKERS)
-    product_links = _extract_product_links(soup, html)
-    category_links_list = _extract_category_links(soup, html)
+    product_links = _extract_product_links(soup, cleaned_html)
+    category_links_list = _extract_category_links(soup, cleaned_html)
+    prices = _extract_prices(full_text)
+    has_order_step = "step=3" in final_lower
+    has_add_id = "action=add&id=" in final_lower
     has_product_signals = has_add_id or has_order_step
     has_category_signals = bool(category_links_list) or bool(product_links)
-    is_product = has_product_signals and not has_no_services and not is_non_product_redirect
-    is_category = has_category_signals and not has_no_services and not is_non_product_redirect and not is_product
+    has_content_signals = has_order_step or has_category_signals or bool(prices)
+    has_blocking_no_services = NO_SERVICES_MARKER in lowered and not has_content_signals
+    has_oos_marker = any(marker in lowered for marker in ACTIVE_OOS_MARKERS)
+    lowered_html = cleaned_html.lower()
+    has_js_errors = "var errors" in lowered_html and any(
+        marker in lowered_html for marker in ACTIVE_OOS_MARKERS
+    )
+    disabled_oos_button = soup.select_one("button[disabled]")
+    has_disabled_oos_button = bool(
+        disabled_oos_button and "out of stock" in _text(disabled_oos_button).lower()
+    )
+    is_product = (
+        has_product_signals and not has_blocking_no_services and not is_non_product_redirect
+    )
+    is_category = (
+        has_category_signals
+        and not has_blocking_no_services
+        and not is_non_product_redirect
+        and not is_product
+    )
 
-    if has_no_services:
+    if has_blocking_no_services:
         in_stock: bool | None = None
     elif has_oos_marker or has_js_errors or has_disabled_oos_button:
         in_stock = False
@@ -131,6 +191,10 @@ def parse_hostbill_page(html: str, final_url: str) -> ParsedItem:
             if text and len(text) <= 160:
                 name_candidates.append(text)
     name_raw = name_candidates[0] if name_candidates else ""
+    if not name_raw and is_category:
+        cart_segments = _hostbill_cart_segments_from_url(final_url)
+        if cart_segments:
+            name_raw = cart_segments[-1]
 
     # Description: search multiple selectors from most specific to least.
     desc_selectors = [
@@ -154,14 +218,17 @@ def parse_hostbill_page(html: str, final_url: str) -> ParsedItem:
     description_raw = _text(description_node)[:5000] if description_node else ""
     # Strip name prefix from description if present.
     if name_raw and description_raw.startswith(name_raw):
-        stripped = description_raw[len(name_raw):].lstrip("\n").strip()
+        stripped = description_raw[len(name_raw) :].lstrip("\n").strip()
         if stripped:
             description_raw = stripped
 
     locations: list[str] = []
     for node in soup.select("label, strong, .title, .field-name"):
         text = _text(node)
-        if any(token in text.lower() for token in ("location", "region", "zone", "country", "datacenter")):
+        if any(
+            token in text.lower()
+            for token in ("location", "region", "zone", "country", "datacenter")
+        ):
             sibling_text = _text(node.parent)
             if sibling_text:
                 locations.append(sibling_text[:160])
@@ -174,7 +241,7 @@ def parse_hostbill_page(html: str, final_url: str) -> ParsedItem:
         evidence.append("js-errors-array")
     if has_disabled_oos_button:
         evidence.append("disabled-oos-button")
-    if has_no_services:
+    if has_blocking_no_services:
         evidence.append("no-services-yet")
     if has_order_step:
         evidence.append("order-step")
@@ -184,7 +251,6 @@ def parse_hostbill_page(html: str, final_url: str) -> ParsedItem:
         evidence.append(f"product-link-count:{len(product_links)}")
     if category_links_list:
         evidence.append(f"category-link-count:{len(category_links_list)}")
-    prices = _extract_prices(full_text)
     if prices:
         evidence.append("has-pricing")
 

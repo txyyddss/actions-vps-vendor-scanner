@@ -1,5 +1,6 @@
-from __future__ import annotations
 """Provides adaptive rate-limiting and boundary control for hidden scanners."""
+
+from __future__ import annotations
 
 from dataclasses import dataclass, field
 

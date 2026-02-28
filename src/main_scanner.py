@@ -1,5 +1,6 @@
-from __future__ import annotations
 """Main orchestration script for discovering links and scanning products across all configured vendors."""
+
+from __future__ import annotations
 
 import argparse
 import hashlib
@@ -14,7 +15,7 @@ from src.hidden_scanner.hostbill.catid_scanner import scan_hostbill_catids
 from src.hidden_scanner.hostbill.pid_scanner import scan_hostbill_pids
 from src.hidden_scanner.whmcs.gid_scanner import scan_whmcs_gids
 from src.hidden_scanner.whmcs.pid_scanner import scan_whmcs_pids
-from src.misc.config_loader import dump_json, load_config, load_sites
+from src.misc.config_loader import load_config, load_sites
 from src.misc.dashboard_generator import generate_dashboard
 from src.misc.http_client import HttpClient
 from src.misc.logger import get_logger, setup_logging
@@ -43,14 +44,20 @@ def _load_tmp(name: str) -> list[dict[str, Any]]:
 def _save_tmp(name: str, payload: list[dict[str, Any]]) -> None:
     """Executes _save_tmp logic."""
     TMP_DIR.mkdir(parents=True, exist_ok=True)
-    (TMP_DIR / f"{name}.json").write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    (TMP_DIR / f"{name}.json").write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
 
 
-def _discover_mode(sites: list[dict[str, Any]], config: dict[str, Any], http_client: HttpClient) -> list[dict[str, Any]]:
+def _discover_mode(
+    sites: list[dict[str, Any]], config: dict[str, Any], http_client: HttpClient
+) -> list[dict[str, Any]]:
     """Executes _discover_mode logic."""
     scanner_cfg = config.get("scanner", {})
     logger = get_logger("main_scanner")
-    discover_site_workers = max(1, int(scanner_cfg.get("discoverer_max_workers", scanner_cfg.get("max_workers", 12))))
+    discover_site_workers = max(
+        1, int(scanner_cfg.get("discoverer_max_workers", scanner_cfg.get("max_workers", 12)))
+    )
     site_discoverer = LinkDiscoverer(
         http_client=http_client,
         max_depth=int(scanner_cfg.get("discoverer_max_depth", 3)),
@@ -64,7 +71,10 @@ def _discover_mode(sites: list[dict[str, Any]], config: dict[str, Any], http_cli
     if targets:
         with ThreadPoolExecutor(max_workers=min(discover_site_workers, len(targets))) as pool:
             future_map = {
-                pool.submit(site_discoverer.discover, site_name=site["name"], base_url=site["url"]): site for site in targets
+                pool.submit(
+                    site_discoverer.discover, site_name=site["name"], base_url=site["url"]
+                ): site
+                for site in targets
             }
             for future in as_completed(future_map):
                 site = future_map[future]
@@ -125,15 +135,21 @@ def _category_mode(
         for site in targets:
             category = str(site.get("category", "")).lower()
             if category == "whmcs":
-                future_map[pool.submit(scan_whmcs_gids, site, config, http_client, state_store)] = site["name"]
+                future_map[pool.submit(scan_whmcs_gids, site, config, http_client, state_store)] = (
+                    site["name"]
+                )
             elif category == "hostbill":
-                future_map[pool.submit(scan_hostbill_catids, site, config, http_client, state_store)] = site["name"]
+                future_map[
+                    pool.submit(scan_hostbill_catids, site, config, http_client, state_store)
+                ] = site["name"]
         for future in as_completed(future_map):
             try:
                 rows.extend(future.result())
             except Exception as exc:  # noqa: BLE001
                 logger = get_logger("main_scanner")
-                logger.warning("category scan failed site=%s error=%s", future_map.get(future, "unknown"), exc)
+                logger.warning(
+                    "category scan failed site=%s error=%s", future_map.get(future, "unknown"), exc
+                )
 
     _save_tmp("category", rows)
     return rows
@@ -163,16 +179,22 @@ def _product_mode(
             elif not site.get("product_scanner"):
                 continue
             elif category == "whmcs":
-                future_map[pool.submit(scan_whmcs_pids, site, config, http_client, state_store)] = site["name"]
+                future_map[pool.submit(scan_whmcs_pids, site, config, http_client, state_store)] = (
+                    site["name"]
+                )
             elif category == "hostbill":
-                future_map[pool.submit(scan_hostbill_pids, site, config, http_client, state_store)] = site["name"]
+                future_map[
+                    pool.submit(scan_hostbill_pids, site, config, http_client, state_store)
+                ] = site["name"]
 
         for future in as_completed(future_map):
             try:
                 rows.extend(future.result())
             except Exception as exc:  # noqa: BLE001
                 logger = get_logger("main_scanner")
-                logger.warning("product scan failed site=%s error=%s", future_map.get(future, "unknown"), exc)
+                logger.warning(
+                    "product scan failed site=%s error=%s", future_map.get(future, "unknown"), exc
+                )
 
     _save_tmp("product", rows)
     return rows
@@ -193,7 +215,9 @@ def _merge_mode(config: dict[str, Any]) -> list[dict[str, Any]]:
     product_rows = _load_tmp("product")
 
     old_products = load_products("data/products.json")
-    merged = merge_records(discoverer_rows, product_rows, category_rows, previous_products=old_products)
+    merged = merge_records(
+        discoverer_rows, product_rows, category_rows, previous_products=old_products
+    )
     merged = _attach_product_ids(merged)
 
     added, deleted, changed_stock = diff_products(old_products, merged)
@@ -229,14 +253,18 @@ def _merge_mode(config: dict[str, Any]) -> list[dict[str, Any]]:
         },
         "sites": sites,
     }
-    generate_dashboard(products_payload, output_dir="web", dashboard_cfg=config.get("dashboard", {}))
+    generate_dashboard(
+        products_payload, output_dir="web", dashboard_cfg=config.get("dashboard", {})
+    )
     return merged
 
 
 def main() -> None:
     """Executes main logic."""
     parser = argparse.ArgumentParser(description="VPS scanner orchestrator")
-    parser.add_argument("--mode", required=True, choices=["discoverer", "category", "product", "merge", "all"])
+    parser.add_argument(
+        "--mode", required=True, choices=["discoverer", "category", "product", "merge", "all"]
+    )
     parser.add_argument("--site", default="", help="optional site name filter")
     args = parser.parse_args()
 

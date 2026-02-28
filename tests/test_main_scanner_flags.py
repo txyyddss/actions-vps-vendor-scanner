@@ -5,8 +5,7 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 
-from src.main_scanner import _discover_mode
-from src.main_scanner import _product_mode
+from src.main_scanner import _discover_mode, _product_mode
 from src.others.state_store import StateStore
 
 
@@ -14,7 +13,9 @@ class DummyHttpClient:
     pass
 
 
-def test_product_mode_runs_special_crawler_even_when_product_scanner_disabled(monkeypatch, tmp_path: Path) -> None:
+def test_product_mode_runs_special_crawler_even_when_product_scanner_disabled(
+    monkeypatch, tmp_path: Path
+) -> None:
     """Special crawlers (acck_api, akile_api) should run regardless of product_scanner flag."""
     calls: list[str] = []
     monkeypatch.setattr("src.main_scanner._save_tmp", lambda name, payload: None)  # noqa: ARG005
@@ -43,7 +44,9 @@ def test_product_mode_runs_special_crawler_even_when_product_scanner_disabled(mo
     assert calls == ["ACCK"]
 
 
-def test_product_mode_runs_special_crawler_when_product_scanner_enabled(monkeypatch, tmp_path: Path) -> None:
+def test_product_mode_runs_special_crawler_when_product_scanner_enabled(
+    monkeypatch, tmp_path: Path
+) -> None:
     calls: list[str] = []
     monkeypatch.setattr("src.main_scanner._save_tmp", lambda name, payload: None)  # noqa: ARG005
 
@@ -110,9 +113,27 @@ def test_discover_mode_runs_sites_in_parallel_and_each_site_single_worker(monkey
         }
     }
     sites = [
-        {"enabled": True, "discoverer": True, "name": "A", "url": "https://a.example/", "category": "WHMCS"},
-        {"enabled": True, "discoverer": True, "name": "B", "url": "https://b.example/", "category": "WHMCS"},
-        {"enabled": True, "discoverer": True, "name": "C", "url": "https://c.example/", "category": "WHMCS"},
+        {
+            "enabled": True,
+            "discoverer": True,
+            "name": "A",
+            "url": "https://a.example/",
+            "category": "WHMCS",
+        },
+        {
+            "enabled": True,
+            "discoverer": True,
+            "name": "B",
+            "url": "https://b.example/",
+            "category": "WHMCS",
+        },
+        {
+            "enabled": True,
+            "discoverer": True,
+            "name": "C",
+            "url": "https://c.example/",
+            "category": "WHMCS",
+        },
     ]
 
     rows = _discover_mode(sites, config, DummyHttpClient())
@@ -143,7 +164,13 @@ def test_discover_mode_runs_even_when_both_outputs_disabled(monkeypatch) -> None
 
     monkeypatch.setattr("src.main_scanner.LinkDiscoverer", FakeDiscoverer)
 
-    config = {"scanner": {"discoverer_max_workers": 2, "discoverer_max_depth": 1, "discoverer_max_pages": 10}}
+    config = {
+        "scanner": {
+            "discoverer_max_workers": 2,
+            "discoverer_max_depth": 1,
+            "discoverer_max_pages": 10,
+        }
+    }
     sites = [
         {
             "enabled": True,

@@ -93,4 +93,3 @@ def test_apply_site_change_add_edit_delete(tmp_path: Path) -> None:
 
     delete_ok, _ = _apply_site_change("delete", "Demo", {}, str(sites_path))
     assert delete_ok is True
-

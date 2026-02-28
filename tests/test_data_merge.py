@@ -125,7 +125,7 @@ def test_write_and_load_site_grouped_roundtrip(tmp_path) -> None:
     """write_products produces site-grouped JSON; load_products inflates back to flat list."""
     import json
 
-    from src.others.data_merge import _group_by_site, load_products, write_products
+    from src.others.data_merge import load_products, write_products
 
     products = [
         {

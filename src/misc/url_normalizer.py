@@ -1,12 +1,12 @@
-from __future__ import annotations
 """Normalizes, classifies, and filters URLs to ensure consistent merging and processing."""
 
-import re
-from dataclasses import dataclass
-from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
+from __future__ import annotations
 
 import json
+import re
+from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
 _url_cfg = {}
 try:
@@ -15,24 +15,73 @@ try:
 except Exception:
     pass
 
-INVALID_PATH_PATTERNS = tuple(_url_cfg.get("invalid_path_patterns", (
-    "contact", "contact.php", "announcements", "announcement",
-    "knowledgebase", "submitticket", "supporttickets", "supporttickets.php",
-    "clientarea", "login", "password", "pwreset", "forgot", "register", "affiliates"
-)))
+INVALID_PATH_PATTERNS = tuple(
+    _url_cfg.get(
+        "invalid_path_patterns",
+        (
+            "contact",
+            "contact.php",
+            "announcements",
+            "announcement",
+            "knowledgebase",
+            "submitticket",
+            "supporttickets",
+            "supporttickets.php",
+            "clientarea",
+            "login",
+            "password",
+            "pwreset",
+            "forgot",
+            "register",
+            "affiliates",
+        ),
+    )
+)
 
-INVALID_EXTENSIONS = set(_url_cfg.get("invalid_extensions", [
-    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".ico", ".css",
-    ".js", ".woff", ".woff2", ".ttf", ".eot", ".pdf", ".zip", ".tar", ".gz"
-]))
+INVALID_EXTENSIONS = set(
+    _url_cfg.get(
+        "invalid_extensions",
+        [
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".gif",
+            ".webp",
+            ".svg",
+            ".ico",
+            ".css",
+            ".js",
+            ".woff",
+            ".woff2",
+            ".ttf",
+            ".eot",
+            ".pdf",
+            ".zip",
+            ".tar",
+            ".gz",
+        ],
+    )
+)
 
-VOLATILE_QUERY_KEYS = set(_url_cfg.get("volatile_query_keys", [
-    "sid", "session", "phpsessid", "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"
-]))
+VOLATILE_QUERY_KEYS = set(
+    _url_cfg.get(
+        "volatile_query_keys",
+        [
+            "sid",
+            "session",
+            "phpsessid",
+            "utm_source",
+            "utm_medium",
+            "utm_campaign",
+            "utm_term",
+            "utm_content",
+        ],
+    )
+)
 
-ENGLISH_LANGUAGE_TAGS = set(_url_cfg.get("english_language_tags", [
-    "en", "en-us", "en_us", "en-gb", "en_gb", "english"
-]))
+ENGLISH_LANGUAGE_TAGS = set(
+    _url_cfg.get("english_language_tags", ["en", "en-us", "en_us", "en-gb", "en_gb", "english"])
+)
 
 LANGUAGE_QUERY_KEYS = set(_url_cfg.get("language_query_keys", ["language", "lang", "locale"]))
 ROUTE_QUERY_KEYS = set(_url_cfg.get("route_query_keys", ["rp"]))
@@ -41,6 +90,7 @@ ROUTE_QUERY_KEYS = set(_url_cfg.get("route_query_keys", ["rp"]))
 @dataclass(slots=True)
 class UrlClassification:
     """Represents UrlClassification."""
+
     url: str
     is_invalid_product_url: bool
     reason: str
@@ -54,7 +104,9 @@ def _normalize_query_key(key: str) -> str:
     return normalized
 
 
-def _normalized_query_pairs(raw_pairs: list[tuple[str, str]], force_english: bool) -> list[tuple[str, str]]:
+def _normalized_query_pairs(
+    raw_pairs: list[tuple[str, str]], force_english: bool
+) -> list[tuple[str, str]]:
     """Normalize and sort query pairs while preserving semantic keys."""
     query_pairs: list[tuple[str, str]] = []
     for key, value in raw_pairs:
@@ -137,16 +189,22 @@ def classify_url(url: str) -> UrlClassification:
     parsed = urlparse(lowered)
 
     if not parsed.scheme.startswith("http"):
-        return UrlClassification(url=normalized, is_invalid_product_url=True, reason="non-http-scheme")
+        return UrlClassification(
+            url=normalized, is_invalid_product_url=True, reason="non-http-scheme"
+        )
 
     for pattern in INVALID_PATH_PATTERNS:
         if pattern in parsed.path:
-            return UrlClassification(url=normalized, is_invalid_product_url=True, reason=f"denylist:{pattern}")
+            return UrlClassification(
+                url=normalized, is_invalid_product_url=True, reason=f"denylist:{pattern}"
+            )
 
     # Filter out non-product cart pages (view cart, checkout, confproduct).
     non_product_actions = ("a=view", "a=checkout")
     if any(action in lowered for action in non_product_actions):
-        return UrlClassification(url=normalized, is_invalid_product_url=True, reason="cart-action-page")
+        return UrlClassification(
+            url=normalized, is_invalid_product_url=True, reason="cart-action-page"
+        )
 
     # Check rp= route values against invalid path patterns.
     for key, value in parse_qsl(parsed.query, keep_blank_values=True):
@@ -154,7 +212,11 @@ def classify_url(url: str) -> UrlClassification:
             route_lower = value.strip().lower()
             for pattern in INVALID_PATH_PATTERNS:
                 if pattern in route_lower:
-                    return UrlClassification(url=normalized, is_invalid_product_url=True, reason=f"blocked-route:{pattern}")
+                    return UrlClassification(
+                        url=normalized,
+                        is_invalid_product_url=True,
+                        reason=f"blocked-route:{pattern}",
+                    )
 
     # Keep only likely product/category-like URLs.
     likely_patterns = ("/store/", "cart.php", "/cart/", "cmd=cart", "action=add", "a=add")
@@ -165,7 +227,9 @@ def classify_url(url: str) -> UrlClassification:
         if k.lower() == "rp"
     )
     if not rp_has_store and not any(pattern in lowered for pattern in likely_patterns):
-        return UrlClassification(url=normalized, is_invalid_product_url=True, reason="not-product-like")
+        return UrlClassification(
+            url=normalized, is_invalid_product_url=True, reason="not-product-like"
+        )
 
     return UrlClassification(url=normalized, is_invalid_product_url=False, reason="ok")
 

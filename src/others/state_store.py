@@ -1,8 +1,8 @@
-from __future__ import annotations
 """Persists scanner progress (highwater marks) across stateless GitHub Action runs."""
 
+from __future__ import annotations
+
 import threading
-from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -12,6 +12,7 @@ from src.misc.config_loader import dump_json, load_json
 
 class StateStore:
     """Represents StateStore."""
+
     def __init__(self, path: Path = Path("data/state.json")) -> None:
         """Executes __init__ logic."""
         self.path = path
@@ -41,4 +42,3 @@ class StateStore:
             site_state = payload.setdefault("sites", {}).setdefault(site_name, {})
             site_state.update(updates)
             self.save(payload)
-

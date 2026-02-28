@@ -127,3 +127,83 @@ def test_http_client_reuses_cookies_after_flaresolverr_success(monkeypatch) -> N
     assert second.tier == "direct"
     assert direct_cookie_headers[0] is None
     assert direct_cookie_headers[1] == "cf_clearance=abc123"
+
+
+def test_http_client_ignores_hostbill_noscript_warning_on_success(monkeypatch) -> None:
+    client = _build_client()
+    flaresolverr_calls = {"count": 0}
+
+    monkeypatch.setattr(
+        client,
+        "_direct_get",
+        lambda url, proxy_url=None, cookie_header=None: FetchResult(
+            ok=True,
+            requested_url=url,
+            final_url=url,
+            status_code=200,
+            text=(
+                "<html><noscript><h1>"
+                "To work with the site requires support for JavaScript and Cookies."
+                "</h1></noscript><body>ok</body></html>"
+            ),
+            headers={"server": "cloudflare", "cf-ray": "abc123"},
+            tier="direct",
+            elapsed_ms=10,
+        ),
+    )
+
+    def fake_flaresolverr(url, domain, proxy_url=None):  # noqa: ANN001, ARG001
+        flaresolverr_calls["count"] += 1
+        return FlareSolverrResult(
+            ok=True,
+            status_code=200,
+            final_url=url,
+            body="<html>fs-ok</html>",
+            cookies=[],
+            message="ok",
+        )
+
+    monkeypatch.setattr(client.flaresolverr, "get", fake_flaresolverr)
+
+    result = client.get("https://example.com/store")
+
+    assert result.ok is True
+    assert result.tier == "direct"
+    assert flaresolverr_calls["count"] == 0
+
+
+def test_http_client_accepts_flaresolverr_no_challenge_content(monkeypatch) -> None:
+    client = _build_client()
+
+    monkeypatch.setattr(
+        client,
+        "_direct_get",
+        lambda url, proxy_url=None, cookie_header=None: FetchResult(
+            ok=True,
+            requested_url=url,
+            final_url=url,
+            status_code=503,
+            text="<html><title>Just a moment...</title></html>",
+            headers={"server": "cloudflare"},
+            tier="direct",
+            elapsed_ms=10,
+        ),
+    )
+    monkeypatch.setattr(
+        client.flaresolverr,
+        "get",
+        lambda url, domain, proxy_url=None: FlareSolverrResult(  # noqa: ARG005
+            ok=True,
+            status_code=200,
+            final_url=url,
+            body="<html>ok</html>",
+            cookies=[],
+            message="Challenge not detected!",
+        ),
+    )
+
+    result = client.get("https://example.com/store")
+
+    assert result.ok is True
+    assert result.tier == "flaresolverr"
+    assert result.text == "<html>ok</html>"

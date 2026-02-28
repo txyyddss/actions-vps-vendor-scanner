@@ -1,5 +1,6 @@
-from __future__ import annotations
 """Performs BFS crawling to discover product and category links from vendor sites."""
+
+from __future__ import annotations
 
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -16,6 +17,7 @@ from src.misc.url_normalizer import is_same_domain, normalize_url, should_skip_d
 @dataclass(slots=True)
 class DiscoverResult:
     """Represents DiscoverResult."""
+
     site_name: str
     base_url: str
     visited_urls: list[str]
@@ -25,7 +27,14 @@ class DiscoverResult:
 
 class LinkDiscoverer:
     """Represents LinkDiscoverer."""
-    def __init__(self, http_client: HttpClient, max_depth: int = 3, max_pages: int = 500, max_workers: int = 8) -> None:
+
+    def __init__(
+        self,
+        http_client: HttpClient,
+        max_depth: int = 3,
+        max_pages: int = 500,
+        max_workers: int = 8,
+    ) -> None:
         """Executes __init__ logic."""
         self.http_client = http_client
         self.max_depth = max_depth
@@ -37,8 +46,11 @@ class LinkDiscoverer:
     def _strip_language_param(url: str) -> str:
         """Remove language/lang/locale query params to avoid duplicate crawls."""
         parsed = urlparse(url)
-        qs = [(k, v) for k, v in parse_qsl(parsed.query, keep_blank_values=True)
-              if k.lower() not in ("language", "lang", "locale")]
+        qs = [
+            (k, v)
+            for k, v in parse_qsl(parsed.query, keep_blank_values=True)
+            if k.lower() not in ("language", "lang", "locale")
+        ]
         return urlunparse(parsed._replace(query=urlencode(qs, doseq=True)))
 
     @staticmethod
@@ -76,7 +88,9 @@ class LinkDiscoverer:
 
         # Forms with HostBill product IDs.
         for form in soup.select("form"):
-            hidden = {i.get("name"): i.get("value") for i in form.select("input[type=hidden][name]")}
+            hidden = {
+                i.get("name"): i.get("value") for i in form.select("input[type=hidden][name]")
+            }
             if hidden.get("action") == "add" and hidden.get("id"):
                 links.add(urljoin(base_url, f"/index.php?/cart/&action=add&id={hidden['id']}"))
 
@@ -171,7 +185,9 @@ class LinkDiscoverer:
                     try:
                         result = future.result()
                     except Exception as exc:  # noqa: BLE001
-                        self.logger.warning("discover fetch failed source=%s error=%s", source_url, exc)
+                        self.logger.warning(
+                            "discover fetch failed source=%s error=%s", source_url, exc
+                        )
                         continue
                     if not result.ok or not result.text or result.status_code == 404:
                         dead_links.add(source_url)
@@ -185,7 +201,9 @@ class LinkDiscoverer:
                             continue
                         skip, reason = should_skip_discovery_url(link)
                         if skip:
-                            self.logger.debug("discoverer skip extracted_url=%s reason=%s", link, reason)
+                            self.logger.debug(
+                                "discoverer skip extracted_url=%s reason=%s", link, reason
+                            )
                             continue
                         new_links.add(link)
                     next_layer.update(new_links - visited)

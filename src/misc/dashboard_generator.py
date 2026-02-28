@@ -1,5 +1,6 @@
-from __future__ import annotations
 """Templates and outputs the static asset files for the web dashboard."""
+
+from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
@@ -7,7 +8,6 @@ from pathlib import Path
 from typing import Any
 
 from src.misc.logger import get_logger
-
 
 HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
@@ -508,7 +508,9 @@ def generate_dashboard(
     raw_json = json.dumps(data, ensure_ascii=False)
     safe_json = raw_json.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
     html = HTML_TEMPLATE.replace("__DATA__", safe_json)
-    html = html.replace("__TITLE__", title.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+    html = html.replace(
+        "__TITLE__", title.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    )
     html = html.replace("__THEME__", theme if theme in {"dark", "light"} else "dark")
     (out / "index.html").write_text(html, encoding="utf-8")
     (assets / "style.css").write_text(CSS_TEMPLATE, encoding="utf-8")

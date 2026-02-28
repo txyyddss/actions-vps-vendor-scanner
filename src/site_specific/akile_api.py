@@ -1,5 +1,6 @@
-from __future__ import annotations
 """Site-specific parser and fetcher for the Akile API vendor."""
+
+from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any

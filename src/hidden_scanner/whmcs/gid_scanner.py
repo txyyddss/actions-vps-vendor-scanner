@@ -1,14 +1,15 @@
-from __future__ import annotations
 """Scans WHMCS instances for hidden product groups (categories) using incremental IDs."""
+
+from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 from urllib.parse import urljoin
 
+from src.hidden_scanner.scan_control import AdaptiveScanController
 from src.misc.http_client import HttpClient
 from src.misc.logger import get_logger
 from src.misc.url_normalizer import normalize_url
-from src.hidden_scanner.scan_control import AdaptiveScanController
 from src.others.state_store import StateStore
 from src.parsers.whmcs_parser import parse_whmcs_page
 
@@ -27,7 +28,9 @@ def scan_whmcs_gids(
 
     scanner_cfg = config.get("scanner", {})
     defaults = scanner_cfg.get("default_scan_bounds", {})
-    hard_max = int(site.get("scan_bounds", {}).get("whmcs_gid_max", defaults.get("whmcs_gid_max", 600)))
+    hard_max = int(
+        site.get("scan_bounds", {}).get("whmcs_gid_max", defaults.get("whmcs_gid_max", 600))
+    )
     initial_floor = int(scanner_cfg.get("initial_scan_floor", 80))
     tail_window = int(scanner_cfg.get("stop_tail_window", 60))
     inactive_streak_limit = int(
@@ -82,7 +85,9 @@ def scan_whmcs_gids(
                 try:
                     responses_by_id[gid] = future.result()
                 except Exception as exc:  # noqa: BLE001
-                    logger.warning("whmcs gid fetch failed site=%s gid=%s error=%s", site_name, gid, exc)
+                    logger.warning(
+                        "whmcs gid fetch failed site=%s gid=%s error=%s", site_name, gid, exc
+                    )
 
             for gid in batch_ids:
                 response = responses_by_id.get(gid)
@@ -112,7 +117,7 @@ def scan_whmcs_gids(
                                     "evidence": parsed.evidence + [f"tier:{response.tier}"],
                                 }
                             )
-                    
+
                     if parsed.product_links:
                         for plink in parsed.product_links:
                             results.append(
@@ -121,14 +126,17 @@ def scan_whmcs_gids(
                                     "platform": "WHMCS",
                                     "scan_type": "category_scanner",
                                     "gid": gid,
-                                    "canonical_url": normalize_url(urljoin(response.final_url, plink), force_english=True),
+                                    "canonical_url": normalize_url(
+                                        urljoin(response.final_url, plink), force_english=True
+                                    ),
                                     "source_url": response.requested_url,
                                     "name_raw": "",
                                     "description_raw": "",
                                     "in_stock": -1,
                                     "type": "product",
                                     "time_used": response.elapsed_ms,
-                                    "evidence": parsed.evidence + ["category-product-link", f"tier:{response.tier}"],
+                                    "evidence": parsed.evidence
+                                    + ["category-product-link", f"tier:{response.tier}"],
                                 }
                             )
 
@@ -140,7 +148,9 @@ def scan_whmcs_gids(
 
     if discovered_ids:
         new_high = max(discovered_ids)
-        state_store.update_site_state(site_name, {"whmcs_gid_highwater": max(new_high, learned_high)})
+        state_store.update_site_state(
+            site_name, {"whmcs_gid_highwater": max(new_high, learned_high)}
+        )
 
     logger.info(
         "whmcs gid scan site=%s discovered=%s unique=%s scanned_to=%s active_max=%s stop=%s",

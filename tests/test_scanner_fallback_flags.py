@@ -97,7 +97,9 @@ def test_whmcs_and_hostbill_scanners_use_http_client(tmp_path) -> None:
         ("src.hidden_scanner.hostbill.pid_scanner.ThreadPoolExecutor", scan_hostbill_pids),
     ],
 )
-def test_hidden_scanners_force_single_worker_per_site(tmp_path, monkeypatch, executor_target: str, scanner) -> None:
+def test_hidden_scanners_force_single_worker_per_site(
+    tmp_path, monkeypatch, executor_target: str, scanner
+) -> None:
     observed_max_workers: list[int | None] = []
 
     class CapturingExecutor(RealThreadPoolExecutor):
@@ -127,7 +129,15 @@ def test_special_api_scanners_use_http_client() -> None:
                         "id": 9,
                         "node_name": "Node 9",
                         "detail": "detail",
-                        "plans": [{"id": 78, "stock": 1, "plan_name": "P1", "price_datas": {"monthly": 5.0}, "flow": 1}],
+                        "plans": [
+                            {
+                                "id": 78,
+                                "stock": 1,
+                                "plan_name": "P1",
+                                "price_datas": {"monthly": 5.0},
+                                "flow": 1,
+                            }
+                        ],
                     }
                 ],
             }
@@ -144,7 +154,15 @@ def test_special_api_scanners_use_http_client() -> None:
                             "id": 23,
                             "group_name": "Node 23",
                             "detail": "detail",
-                            "plans": [{"id": 934, "stock": 2, "plan_name": "P2", "price_datas": {"monthly": 6.0}, "flow": 1}],
+                            "plans": [
+                                {
+                                    "id": 934,
+                                    "stock": 2,
+                                    "plan_name": "P2",
+                                    "price_datas": {"monthly": 6.0},
+                                    "flow": 1,
+                                }
+                            ],
                         }
                     ],
                 }
@@ -309,7 +327,9 @@ def test_whmcs_pid_scanner_accepts_confproduct_as_in_stock(tmp_path) -> None:
     fake = ConfproductClient()
     state_store = StateStore(tmp_path / "state.json")
 
-    records = scan_whmcs_pids(_site("ConfproductWHMCS", "https://example.com/"), _scanner_config(), fake, state_store)
+    records = scan_whmcs_pids(
+        _site("ConfproductWHMCS", "https://example.com/"), _scanner_config(), fake, state_store
+    )
 
     assert len(records) == 1
     assert records[0]["in_stock"] == 1
@@ -346,7 +366,9 @@ def test_whmcs_pid_scanner_accepts_oos_store_product(tmp_path) -> None:
     fake = OosProductClient()
     state_store = StateStore(tmp_path / "state.json")
 
-    records = scan_whmcs_pids(_site("OOSWHMCS", "https://example.com/"), _scanner_config(), fake, state_store)
+    records = scan_whmcs_pids(
+        _site("OOSWHMCS", "https://example.com/"), _scanner_config(), fake, state_store
+    )
 
     assert len(records) == 1
     assert records[0]["in_stock"] == 0
@@ -383,7 +405,9 @@ def test_whmcs_pid_scanner_rejects_cart_root_redirect(tmp_path) -> None:
     fake = CartRootClient()
     state_store = StateStore(tmp_path / "state.json")
 
-    records = scan_whmcs_pids(_site("CartRootWHMCS", "https://example.com/"), _scanner_config(), fake, state_store)
+    records = scan_whmcs_pids(
+        _site("CartRootWHMCS", "https://example.com/"), _scanner_config(), fake, state_store
+    )
 
     assert records == []
 
@@ -421,7 +445,9 @@ def test_whmcs_pid_scanner_rejects_category_listing_redirect(tmp_path) -> None:
     fake = CategoryListingClient()
     state_store = StateStore(tmp_path / "state.json")
 
-    records = scan_whmcs_pids(_site("CategoryWHMCS", "https://example.com/"), _scanner_config(), fake, state_store)
+    records = scan_whmcs_pids(
+        _site("CategoryWHMCS", "https://example.com/"), _scanner_config(), fake, state_store
+    )
 
     assert records == []
 
@@ -459,7 +485,9 @@ def test_whmcs_pid_scanner_rejects_cart_add_listing_page(tmp_path) -> None:
     fake = CartAddListingClient()
     state_store = StateStore(tmp_path / "state.json")
 
-    records = scan_whmcs_pids(_site("CartAddListingWHMCS", "https://example.com/"), _scanner_config(), fake, state_store)
+    records = scan_whmcs_pids(
+        _site("CartAddListingWHMCS", "https://example.com/"), _scanner_config(), fake, state_store
+    )
 
     assert records == []
 

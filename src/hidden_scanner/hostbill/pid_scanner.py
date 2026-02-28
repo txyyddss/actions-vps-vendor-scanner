@@ -1,19 +1,19 @@
-from __future__ import annotations
 """Scans HostBill instances for hidden products using incremental IDs."""
+
+from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urljoin
 
+from src.hidden_scanner.scan_control import AdaptiveScanController
 from src.misc.http_client import HttpClient
 from src.misc.logger import get_logger
 from src.misc.url_normalizer import canonicalize_for_merge, normalize_url
-from src.hidden_scanner.scan_control import AdaptiveScanController
 from src.others.state_store import StateStore
 from src.parsers.common import in_stock_int
 from src.parsers.hostbill_parser import parse_hostbill_page
-
 
 _in_stock_int = in_stock_int
 
@@ -33,7 +33,9 @@ def scan_hostbill_pids(
 
     scanner_cfg = config.get("scanner", {})
     defaults = scanner_cfg.get("default_scan_bounds", {})
-    hard_max = int(site.get("scan_bounds", {}).get("hostbill_pid_max", defaults.get("hostbill_pid_max", 2500)))
+    hard_max = int(
+        site.get("scan_bounds", {}).get("hostbill_pid_max", defaults.get("hostbill_pid_max", 2500))
+    )
     initial_floor = int(scanner_cfg.get("initial_scan_floor", 80))
     tail_window = int(scanner_cfg.get("stop_tail_window", 60))
     inactive_streak_limit = int(
@@ -78,7 +80,11 @@ def scan_hostbill_pids(
 
             future_map = {
                 # Use FlareSolverr to handle challenge-protected sites.
-                pool.submit(http_client.get, urljoin(base_url, f"index.php?/cart/&action=add&id={pid}"), True): pid
+                pool.submit(
+                    http_client.get,
+                    urljoin(base_url, f"index.php?/cart/&action=add&id={pid}"),
+                    True,
+                ): pid
                 for pid in batch_ids
             }
             responses_by_id: dict[int, Any] = {}
@@ -87,7 +93,9 @@ def scan_hostbill_pids(
                 try:
                     responses_by_id[pid] = future.result()
                 except Exception as exc:  # noqa: BLE001
-                    logger.warning("hostbill pid fetch failed site=%s pid=%s error=%s", site_name, pid, exc)
+                    logger.warning(
+                        "hostbill pid fetch failed site=%s pid=%s error=%s", site_name, pid, exc
+                    )
 
             for pid in batch_ids:
                 response = responses_by_id.get(pid)
@@ -99,7 +107,9 @@ def scan_hostbill_pids(
                     if parsed.is_product or parsed.in_stock is False:
                         # Use requested_url (not final_url) because HostBill may
                         # redirect to session-dependent URLs.
-                        canonical_url = canonicalize_for_merge(normalize_url(response.requested_url, force_english=True))
+                        canonical_url = canonicalize_for_merge(
+                            normalize_url(response.requested_url, force_english=True)
+                        )
                         record = {
                             "site": site_name,
                             "platform": "HostBill",
@@ -134,7 +144,9 @@ def scan_hostbill_pids(
                 break
 
     if discovered_ids:
-        state_store.update_site_state(site_name, {"hostbill_pid_highwater": max(max(discovered_ids), learned_high)})
+        state_store.update_site_state(
+            site_name, {"hostbill_pid_highwater": max(max(discovered_ids), learned_high)}
+        )
 
     logger.info(
         "hostbill pid scan site=%s discovered=%s unique=%s scanned_to=%s active_max=%s stop=%s",

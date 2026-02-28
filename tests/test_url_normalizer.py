@@ -38,7 +38,9 @@ def test_discovery_skip_non_english_language_url() -> None:
 
 
 def test_discovery_skip_non_english_language_url_with_malformed_amp_key() -> None:
-    skip, reason = should_skip_discovery_url("https://console.po0.com/store/vps?amp%3Blanguage=norwegian")
+    skip, reason = should_skip_discovery_url(
+        "https://console.po0.com/store/vps?amp%3Blanguage=norwegian"
+    )
     assert skip is True
     assert "non-english-language" in reason
 
@@ -85,7 +87,9 @@ def test_discovery_skip_rp_announcement_route_url() -> None:
 
 
 def test_discovery_skip_supporttickets_url() -> None:
-    skip, reason = should_skip_discovery_url("https://my.rfchost.com/supporttickets.php?language=english")
+    skip, reason = should_skip_discovery_url(
+        "https://my.rfchost.com/supporttickets.php?language=english"
+    )
     assert skip is True
     assert "blocked-path" in reason
 

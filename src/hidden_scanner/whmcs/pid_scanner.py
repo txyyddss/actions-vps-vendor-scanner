@@ -1,16 +1,17 @@
-from __future__ import annotations
 """Scans WHMCS instances for hidden products using incremental IDs."""
 
+from __future__ import annotations
+
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
-import re
 from typing import Any
 from urllib.parse import urljoin
 
+from src.hidden_scanner.scan_control import AdaptiveScanController
 from src.misc.http_client import HttpClient
 from src.misc.logger import get_logger
 from src.misc.url_normalizer import canonicalize_for_merge, normalize_url
-from src.hidden_scanner.scan_control import AdaptiveScanController
 from src.others.state_store import StateStore
 from src.parsers.whmcs_parser import classify_whmcs_route, parse_whmcs_page
 
@@ -46,7 +47,9 @@ def scan_whmcs_pids(
 
     scanner_cfg = config.get("scanner", {})
     defaults = scanner_cfg.get("default_scan_bounds", {})
-    hard_max = int(site.get("scan_bounds", {}).get("whmcs_pid_max", defaults.get("whmcs_pid_max", 2000)))
+    hard_max = int(
+        site.get("scan_bounds", {}).get("whmcs_pid_max", defaults.get("whmcs_pid_max", 2000))
+    )
     initial_floor = int(scanner_cfg.get("initial_scan_floor", 80))
     tail_window = int(scanner_cfg.get("stop_tail_window", 60))
     inactive_streak_limit = int(
@@ -92,7 +95,9 @@ def scan_whmcs_pids(
 
             future_map = {
                 # Use FlareSolverr to handle challenge-protected sites.
-                pool.submit(http_client.get, urljoin(base_url, f"cart.php?a=add&pid={pid}"), True): pid
+                pool.submit(
+                    http_client.get, urljoin(base_url, f"cart.php?a=add&pid={pid}"), True
+                ): pid
                 for pid in batch_ids
             }
             responses_by_id: dict[int, Any] = {}
@@ -101,7 +106,9 @@ def scan_whmcs_pids(
                 try:
                     responses_by_id[pid] = future.result()
                 except Exception as exc:  # noqa: BLE001
-                    logger.warning("whmcs pid fetch failed site=%s pid=%s error=%s", site_name, pid, exc)
+                    logger.warning(
+                        "whmcs pid fetch failed site=%s pid=%s error=%s", site_name, pid, exc
+                    )
 
             for pid in batch_ids:
                 response = responses_by_id.get(pid)
@@ -128,7 +135,9 @@ def scan_whmcs_pids(
                         if route == "store_product":
                             duplicate_signature = (
                                 "url",
-                                canonicalize_for_merge(normalize_url(response.final_url, force_english=True)),
+                                canonicalize_for_merge(
+                                    normalize_url(response.final_url, force_english=True)
+                                ),
                             )
                         else:
                             duplicate_signature = ("content", *_content_signature(parsed))
@@ -137,7 +146,9 @@ def scan_whmcs_pids(
                         # Use requested_url (not final_url) because WHMCS redirects
                         # cart.php?a=add&pid=X to cart.php?a=confproduct&i=N which is
                         # session-dependent and not a stable product URL.
-                        canonical_url = canonicalize_for_merge(normalize_url(response.requested_url, force_english=True))
+                        canonical_url = canonicalize_for_merge(
+                            normalize_url(response.requested_url, force_english=True)
+                        )
                         record = {
                             "site": site_name,
                             "platform": "WHMCS",
@@ -174,7 +185,9 @@ def scan_whmcs_pids(
 
     if discovered_ids:
         new_high = max(discovered_ids)
-        state_store.update_site_state(site_name, {"whmcs_pid_highwater": max(new_high, learned_high)})
+        state_store.update_site_state(
+            site_name, {"whmcs_pid_highwater": max(new_high, learned_high)}
+        )
 
     logger.info(
         "whmcs pid scan site=%s discovered=%s unique=%s scanned_to=%s active_max=%s stop=%s",

@@ -1,5 +1,6 @@
-from __future__ import annotations
 """A client for FlareSolverr to bypass Cloudflare and other JS challenges."""
+
+from __future__ import annotations
 
 import json
 import random
@@ -18,6 +19,7 @@ from src.misc.retry_rate_limit import BackoffPolicy
 @dataclass(slots=True)
 class FlareSolverrResult:
     """Represents FlareSolverrResult."""
+
     ok: bool
     status_code: int | None
     final_url: str
@@ -29,6 +31,7 @@ class FlareSolverrResult:
 
 class FlareSolverrClient:
     """Represents FlareSolverrClient."""
+
     _QUEUE_DEPTH_PATTERN = re.compile(r"task queue depth is\s*(\d+)", re.IGNORECASE)
 
     def __init__(
@@ -153,6 +156,28 @@ class FlareSolverrClient:
         """Executes _retry_delay logic."""
         return self.backoff.delay_for_attempt(attempt)
 
+    @staticmethod
+    def _is_no_challenge_message(message: str) -> bool:
+        """Return whether FlareSolverr reports that no challenge was present."""
+        return "challenge not detected" in message.lower()
+
+    @staticmethod
+    def _solution_result(
+        result: dict[str, Any],
+        default_url: str,
+        ok: bool,
+    ) -> FlareSolverrResult:
+        """Build a response object from a FlareSolverr solution payload."""
+        solution = result.get("solution", {})
+        return FlareSolverrResult(
+            ok=ok,
+            status_code=solution.get("status"),
+            final_url=solution.get("url", default_url),
+            body=solution.get("response", ""),
+            cookies=solution.get("cookies", []),
+            message=str(result.get("message", "")),
+        )
+
     def get(self, url: str, domain: str, proxy_url: str | None = None) -> FlareSolverrResult:
         """Executes get logic."""
         max_attempts = self.backoff.max_attempts
@@ -175,17 +200,11 @@ class FlareSolverrClient:
                 finally:
                     self._release_request_slot()
                 if result.get("status") == "ok":
-                    solution = result.get("solution", {})
-                    return FlareSolverrResult(
-                        ok=True,
-                        status_code=solution.get("status"),
-                        final_url=solution.get("url", url),
-                        body=solution.get("response", ""),
-                        cookies=solution.get("cookies", []),
-                        message=result.get("message", ""),
-                    )
+                    return self._solution_result(result, url, ok=True)
 
                 message = str(result.get("message", "unknown-error"))
+                if self._is_no_challenge_message(message) and result.get("solution"):
+                    return self._solution_result(result, url, ok=True)
                 queue_depth = self._extract_queue_depth(message)
                 if queue_depth is not None and queue_depth > self.queue_depth_threshold:
                     self.logger.warning(
@@ -197,10 +216,10 @@ class FlareSolverrClient:
                 is_retriable = self._is_retriable_error(message)
 
                 is_session_error = "session" in message.lower() and (
-                    "not found" in message.lower() or
-                    "does not exist" in message.lower() or
-                    "invalid" in message.lower() or
-                    "destroyed" in message.lower()
+                    "not found" in message.lower()
+                    or "does not exist" in message.lower()
+                    or "invalid" in message.lower()
+                    or "destroyed" in message.lower()
                 )
 
                 if is_session_error:
@@ -248,10 +267,10 @@ class FlareSolverrClient:
                 )
 
                 is_session_error = "session" in error_text.lower() and (
-                    "not found" in error_text.lower() or
-                    "does not exist" in error_text.lower() or
-                    "invalid" in error_text.lower() or
-                    "destroyed" in error_text.lower()
+                    "not found" in error_text.lower()
+                    or "does not exist" in error_text.lower()
+                    or "invalid" in error_text.lower()
+                    or "destroyed" in error_text.lower()
                 )
 
                 if is_session_error:
@@ -291,4 +310,3 @@ class FlareSolverrClient:
             message="request-failed",
             error="retry-exhausted",
         )
-

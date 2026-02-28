@@ -1,5 +1,6 @@
-from __future__ import annotations
 """Provides circuit breaking, rate limiting, and backoff policies for network requests."""
+
+from __future__ import annotations
 
 import random
 import threading
@@ -15,6 +16,7 @@ RETRIABLE_STATUS_CODES: Final[set[int]] = {408, 425, 429, 500, 502, 503, 504}
 @dataclass(slots=True)
 class BackoffPolicy:
     """Represents BackoffPolicy."""
+
     max_attempts: int = 3
     base_delay_seconds: float = 1.0
     max_delay_seconds: float = 30.0
@@ -22,7 +24,9 @@ class BackoffPolicy:
 
     def delay_for_attempt(self, attempt: int) -> float:
         """Executes delay_for_attempt logic."""
-        exp_delay = min(self.max_delay_seconds, self.base_delay_seconds * (2 ** max(0, attempt - 1)))
+        exp_delay = min(
+            self.max_delay_seconds, self.base_delay_seconds * (2 ** max(0, attempt - 1))
+        )
         jitter = random.uniform(0, self.jitter_seconds)
         return exp_delay + jitter
 
@@ -105,10 +109,11 @@ class DomainRateLimiter:
         """Executes apply_cooldown logic."""
         domain = extract_domain(url)
         with self._lock:
-            self._cooldown_until[domain] = max(self._cooldown_until.get(domain, 0.0), time.time() + seconds)
+            self._cooldown_until[domain] = max(
+                self._cooldown_until.get(domain, 0.0), time.time() + seconds
+            )
 
 
 def should_retry_status(status_code: int) -> bool:
     """Executes should_retry_status logic."""
     return status_code in RETRIABLE_STATUS_CODES
-

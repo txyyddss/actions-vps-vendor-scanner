@@ -1,5 +1,6 @@
-from __future__ import annotations
 """Handles deduplication and conflict-priority merging of products found via multiple crawl paths."""
+
+from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,11 +15,14 @@ try:
     _GLOBAL_CONFIG = load_config("config/config.json")
 except Exception:  # noqa: BLE001
     _GLOBAL_CONFIG = {}
-SCAN_TYPE_PRIORITY = _GLOBAL_CONFIG.get("data_merge", {}).get("source_priority", {
-    "discoverer": 1,
-    "category_scanner": 2,
-    "product_scanner": 3,
-})
+SCAN_TYPE_PRIORITY = _GLOBAL_CONFIG.get("data_merge", {}).get(
+    "source_priority",
+    {
+        "discoverer": 1,
+        "category_scanner": 2,
+        "product_scanner": 3,
+    },
+)
 
 
 def _scan_weight(scan_type: str) -> int:
@@ -117,7 +121,7 @@ def merge_records(
     logger = get_logger("data_merge")
     # Re-sanitize previous products to drop stale invalid URLs (e.g. cart.php?a=view)
     previous_by_url: dict[str, dict[str, Any]] = {}
-    for old_item in (previous_products or []):
+    for old_item in previous_products or []:
         cleaned = _sanitize_record(old_item)
         if cleaned:
             previous_by_url[cleaned["canonical_url"]] = cleaned
@@ -159,7 +163,9 @@ def merge_records(
             winner_url = content_seen[key]
             winner = merged[winner_url]
             # Merge evidence from duplicate into winner
-            combined_evidence = list(dict.fromkeys(winner.get("evidence", []) + record.get("evidence", [])))
+            combined_evidence = list(
+                dict.fromkeys(winner.get("evidence", []) + record.get("evidence", []))
+            )
             winner["evidence"] = combined_evidence
             if "content-dedup-merged" not in combined_evidence:
                 winner["evidence"].append("content-dedup-merged")
@@ -249,7 +255,9 @@ def _group_by_site(products: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sites
 
 
-def write_products(products: list[dict[str, Any]], run_id: str, path: str = "data/products.json") -> None:
+def write_products(
+    products: list[dict[str, Any]], run_id: str, path: str = "data/products.json"
+) -> None:
     """Write product list to site-grouped JSON with computed stats."""
     in_stock_count = sum(1 for item in products if item.get("in_stock") == 1)
     oos_count = sum(1 for item in products if item.get("in_stock") == 0)
@@ -267,4 +275,3 @@ def write_products(products: list[dict[str, Any]], run_id: str, path: str = "dat
         "sites": sites,
     }
     dump_json(path, payload)
-

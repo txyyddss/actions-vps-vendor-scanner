@@ -1,9 +1,10 @@
-from __future__ import annotations
 """Handles formatting and sending notifications to Telegram channels."""
+
+from __future__ import annotations
 
 import os
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -43,6 +44,7 @@ def _stock_emoji(in_stock: int) -> str:
 @dataclass(slots=True)
 class TelegramConfig:
     """Represents TelegramConfig."""
+
     enabled: bool
     bot_token: str
     chat_id: str
@@ -63,6 +65,7 @@ def _normalize_topic_id(value: str) -> int | None:
 
 class TelegramSender:
     """Telegram notification sender with rate-limiting and retry logic."""
+
     def __init__(self, cfg: dict[str, Any]) -> None:
         # Allow config to override which env var names to read.
         bot_token_env = str(cfg.get("bot_token_env", "TELEGRAM_BOT_TOKEN"))
@@ -142,7 +145,9 @@ class TelegramSender:
                         pass
                     self.logger.warning(
                         "Telegram rate limited (429), attempt %s/%s, retrying in %.1fs",
-                        attempt, self.config.max_retries, retry_after,
+                        attempt,
+                        self.config.max_retries,
+                        retry_after,
                     )
                     time.sleep(retry_after)
                     continue
@@ -154,7 +159,10 @@ class TelegramSender:
             except httpx.HTTPStatusError as exc:
                 self.logger.warning(
                     "Telegram send failed (HTTP %s), attempt %s/%s: %s",
-                    exc.response.status_code, attempt, self.config.max_retries, exc,
+                    exc.response.status_code,
+                    attempt,
+                    self.config.max_retries,
+                    exc,
                 )
                 if exc.response.status_code >= 500:
                     time.sleep(self.config.base_retry_delay * (2 ** (attempt - 1)))
@@ -163,7 +171,9 @@ class TelegramSender:
             except Exception as exc:  # noqa: BLE001
                 self.logger.warning(
                     "Telegram send failed, attempt %s/%s: %s",
-                    attempt, self.config.max_retries, exc,
+                    attempt,
+                    self.config.max_retries,
+                    exc,
                 )
                 time.sleep(self.config.base_retry_delay * (2 ** (attempt - 1)))
                 continue
@@ -304,7 +314,11 @@ class TelegramSender:
         e = _escape_md2
         restocked = [i for i in changed_items if i.get("restocked")]
         destocked = [i for i in changed_items if i.get("destocked")]
-        other = [i for i in changed_items if i.get("changed") and not i.get("restocked") and not i.get("destocked")]
+        other = [
+            i
+            for i in changed_items
+            if i.get("changed") and not i.get("restocked") and not i.get("destocked")
+        ]
 
         lines = [
             "📈 *Stock Status Changes*",
@@ -318,7 +332,11 @@ class TelegramSender:
                 name = item.get("name_raw", "")
                 site = item.get("site", "")
                 price = item.get("price_raw", "")
-                label = f"*{e(site)}* \\- {e(name)}" if name else f"`{e(item.get('canonical_url', ''))}`"
+                label = (
+                    f"*{e(site)}* \\- {e(name)}"
+                    if name
+                    else f"`{e(item.get('canonical_url', ''))}`"
+                )
                 price_suffix = f" \\| {e(price)}" if price else ""
                 lines.append(f"  {label}{price_suffix}")
             lines.append("")
@@ -327,7 +345,11 @@ class TelegramSender:
             for item in destocked[:20]:
                 name = item.get("name_raw", "")
                 site = item.get("site", "")
-                label = f"*{e(site)}* \\- {e(name)}" if name else f"`{e(item.get('canonical_url', ''))}`"
+                label = (
+                    f"*{e(site)}* \\- {e(name)}"
+                    if name
+                    else f"`{e(item.get('canonical_url', ''))}`"
+                )
                 lines.append(f"  {label}")
             lines.append("")
         return self._send_chunked(lines, header_lines=4)
