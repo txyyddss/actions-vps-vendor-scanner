@@ -22,7 +22,9 @@ def load_json(path: str | Path) -> dict[str, Any]:
 
 def dump_json(path: str | Path, payload: dict[str, Any]) -> None:
     """Executes dump_json logic."""
-    with Path(path).open("w", encoding="utf-8") as f:
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, ensure_ascii=False)
         f.write("\n")
 
