@@ -64,7 +64,7 @@
         "category": "WHMCS",
         "special_crawler": "",
         "product_scanner": false,
-        "category_scanner": true,
+        "category_scanner": false,
         "scan_bounds": {}
       },
       {

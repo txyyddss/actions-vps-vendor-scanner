@@ -12,7 +12,7 @@ from src.others.stock_checker import check_stock, load_stock, merge_with_previou
 
 
 def main() -> None:
-    """Executes main logic."""
+    """Run stock check and send alerts."""
     config = load_config("config/config.json")
     setup_logging(
         level=str(config.get("logging", {}).get("level", "INFO")),
@@ -34,6 +34,7 @@ def main() -> None:
             stats={
                 "total_checked": 0,
                 "restocked": 0,
+                "destocked": 0,
                 "changed": 0,
             },
         )
@@ -49,16 +50,27 @@ def main() -> None:
     previous_items = load_stock("data/stock.json")
     merged_items = merge_with_previous(current_items=current_items, previous_items=previous_items)
 
-    restocked_urls = [item["canonical_url"] for item in merged_items if item.get("restocked")]
     tg = TelegramSender(config.get("telegram", {}))
-    if restocked_urls:
-        tg.send_restock_alerts(restocked_urls)
+
+    # Send restock alerts with full product info
+    restocked_items = [item for item in merged_items if item.get("restocked")]
+    if restocked_items:
+        tg.send_restock_alerts(restocked_items)
+
+    # Send comprehensive stock change alerts
+    changed_items = [item for item in merged_items if item.get("changed")]
+    if changed_items:
+        tg.send_stock_change_alerts(changed_items)
+
     tg.send_run_stats(
         title="Stock Alert Run Summary",
         stats={
             "total_checked": len(merged_items),
-            "restocked": len(restocked_urls),
-            "changed": sum(1 for item in merged_items if item.get("changed")),
+            "in_stock": sum(1 for item in merged_items if item.get("in_stock") == 1),
+            "out_of_stock": sum(1 for item in merged_items if item.get("in_stock") == 0),
+            "restocked": len(restocked_items),
+            "destocked": sum(1 for item in merged_items if item.get("destocked")),
+            "changed": len(changed_items),
         },
     )
 

@@ -14,13 +14,13 @@ from src.others.state_store import StateStore
 from src.parsers.hostbill_parser import parse_hostbill_page
 
 
-def _status_from_flag(in_stock: bool | None) -> str:
-    """Executes _status_from_flag logic."""
-    if in_stock is True:
-        return "in_stock"
-    if in_stock is False:
-        return "out_of_stock"
-    return "unknown"
+def _in_stock_int(flag: bool | None) -> int:
+    """Convert parser bool|None to integer: 1=in_stock, 0=oos, -1=unknown."""
+    if flag is True:
+        return 1
+    if flag is False:
+        return 0
+    return -1
 
 
 def scan_hostbill_pids(
@@ -102,19 +102,24 @@ def scan_hostbill_pids(
 
                     # Keep product-like pages even if currently out of stock.
                     if parsed.is_product or parsed.in_stock is False:
-                        canonical_url = canonicalize_for_merge(normalize_url(response.final_url, force_english=True))
+                        # Use requested_url (not final_url) because HostBill may
+                        # redirect to session-dependent URLs.
+                        canonical_url = canonicalize_for_merge(normalize_url(response.requested_url, force_english=True))
                         record = {
                             "site": site_name,
                             "platform": "HostBill",
                             "scan_type": "product_scanner",
-                            "source_priority": "product_scanner",
                             "pid": pid,
                             "canonical_url": canonical_url,
                             "source_url": response.requested_url,
                             "name_raw": parsed.name_raw,
                             "description_raw": parsed.description_raw,
+                            "in_stock": _in_stock_int(parsed.in_stock),
                             "type": "product",
                             "time_used": response.elapsed_ms,
+                            "price_raw": parsed.price_raw,
+                            "cycles": parsed.cycles,
+                            "locations_raw": parsed.locations_raw,
                             "evidence": parsed.evidence + [f"tier:{response.tier}"],
                             "first_seen_at": now,
                             "last_seen_at": now,

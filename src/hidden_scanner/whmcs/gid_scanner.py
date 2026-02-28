@@ -101,15 +101,14 @@ def scan_whmcs_gids(
                                     "site": site_name,
                                     "platform": "WHMCS",
                                     "scan_type": "category_scanner",
-                                    "source_priority": "category_scanner",
                                     "gid": gid,
                                     "canonical_url": category_url,
                                     "source_url": response.requested_url,
                                     "name_raw": parsed.name_raw,
-                                    "stock_status": "unknown",
+                                    "in_stock": -1,
                                     "type": "category",
                                     "time_used": response.elapsed_ms,
-                                    "evidence": parsed.evidence,
+                                    "evidence": parsed.evidence + [f"tier:{response.tier}"],
                                 }
                             )
                     
@@ -120,14 +119,15 @@ def scan_whmcs_gids(
                                     "site": site_name,
                                     "platform": "WHMCS",
                                     "scan_type": "category_scanner",
-                                    "source_priority": "category_scanner",
                                     "gid": gid,
                                     "canonical_url": normalize_url(urljoin(response.final_url, plink), force_english=True),
                                     "source_url": response.requested_url,
-                                    "stock_status": "unknown",
+                                    "name_raw": "",
+                                    "description_raw": "",
+                                    "in_stock": -1,
                                     "type": "product",
                                     "time_used": response.elapsed_ms,
-                                    "evidence": parsed.evidence + ["category-product-link"],
+                                    "evidence": parsed.evidence + ["category-product-link", f"tier:{response.tier}"],
                                 }
                             )
 

@@ -24,20 +24,31 @@ class FakeHttpClient:
 
 def test_stock_checker_and_restock_merge() -> None:
     products = [
-        {"product_id": "1", "canonical_url": "https://x/in", "platform": "WHMCS", "stock_status": "unknown"},
-        {"product_id": "2", "canonical_url": "https://x/oos", "platform": "WHMCS", "stock_status": "unknown"},
+        {"product_id": "1", "canonical_url": "https://x/in", "platform": "WHMCS", "in_stock": -1, "site": "Test", "name_raw": "Plan"},
+        {"product_id": "2", "canonical_url": "https://x/oos", "platform": "WHMCS", "in_stock": -1, "site": "Test", "name_raw": "Plan2"},
     ]
     rows = check_stock(products, FakeHttpClient(), max_workers=2)
     by_url = {row["canonical_url"]: row for row in rows}
-    assert by_url["https://x/in"]["status"] == "in_stock"
-    assert by_url["https://x/oos"]["status"] == "out_of_stock"
+    assert by_url["https://x/in"]["in_stock"] == 1
+    assert by_url["https://x/oos"]["in_stock"] == 0
 
     previous = [
-        {"canonical_url": "https://x/in", "status": "out_of_stock"},
-        {"canonical_url": "https://x/oos", "status": "out_of_stock"},
+        {"canonical_url": "https://x/in", "in_stock": 0},
+        {"canonical_url": "https://x/oos", "in_stock": 0},
     ]
     merged = merge_with_previous(rows, previous)
     merged_map = {row["canonical_url"]: row for row in merged}
     assert merged_map["https://x/in"]["restocked"] is True
     assert merged_map["https://x/oos"]["restocked"] is False
 
+
+def test_destock_detection() -> None:
+    current = [
+        {"canonical_url": "https://x/a", "in_stock": 0},
+    ]
+    previous = [
+        {"canonical_url": "https://x/a", "in_stock": 1},
+    ]
+    merged = merge_with_previous(current, previous)
+    assert merged[0]["destocked"] is True
+    assert merged[0]["restocked"] is False

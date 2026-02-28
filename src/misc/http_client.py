@@ -314,7 +314,9 @@ class HttpClient:
                         self._clear_cached_cookies(domain)
 
             if self.flaresolverr_enabled:
+                fs_start = time.perf_counter()
                 fs = self.flaresolverr.get(url=normalized_url, domain=domain, proxy_url=active_proxy)
+                fs_elapsed = int((time.perf_counter() - fs_start) * 1000)
                 self.logger.debug(
                     "fetch flaresolverr attempt=%s url=%s ok=%s status=%s",
                     attempt,
@@ -334,7 +336,7 @@ class HttpClient:
                         text=fs.body,
                         headers={},
                         tier="flaresolverr",
-                        elapsed_ms=0,
+                        elapsed_ms=fs_elapsed,
                     )
                 last_error = fs.error or fs.message
                 self.logger.debug(

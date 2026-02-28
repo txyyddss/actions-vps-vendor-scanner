@@ -115,9 +115,28 @@ def classify_url(url: str) -> UrlClassification:
         if pattern in parsed.path:
             return UrlClassification(url=normalized, is_invalid_product_url=True, reason=f"denylist:{pattern}")
 
+    # Filter out non-product cart pages (view cart, checkout, confproduct).
+    non_product_actions = ("a=view", "a=checkout", "a=confproduct")
+    if any(action in lowered for action in non_product_actions):
+        return UrlClassification(url=normalized, is_invalid_product_url=True, reason="cart-action-page")
+
+    # Check rp= route values against invalid path patterns.
+    for key, value in parse_qsl(parsed.query, keep_blank_values=True):
+        if key.lower() == "rp":
+            route_lower = value.strip().lower()
+            for pattern in INVALID_PATH_PATTERNS:
+                if pattern in route_lower:
+                    return UrlClassification(url=normalized, is_invalid_product_url=True, reason=f"blocked-route:{pattern}")
+
     # Keep only likely product/category-like URLs.
     likely_patterns = ("/store/", "cart.php", "/cart/", "cmd=cart", "action=add", "a=add")
-    if not any(pattern in lowered for pattern in likely_patterns):
+    # Also check rp= query routes for /store/ patterns.
+    rp_has_store = any(
+        "/store/" in v.lower()
+        for k, v in parse_qsl(parsed.query, keep_blank_values=True)
+        if k.lower() == "rp"
+    )
+    if not rp_has_store and not any(pattern in lowered for pattern in likely_patterns):
         return UrlClassification(url=normalized, is_invalid_product_url=True, reason="not-product-like")
 
     return UrlClassification(url=normalized, is_invalid_product_url=False, reason="ok")

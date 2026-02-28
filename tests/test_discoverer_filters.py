@@ -88,13 +88,13 @@ def test_discoverer_seed_urls_find_catalog_when_root_only_shows_login() -> None:
     root = "https://example.com/"
     pages = {
         # Simulate a login-like landing page with no useful links.
-        "https://example.com/?language=english": "<html><a href='/index.php?rp=/login'>login</a></html>",
+        "https://example.com/": "<html><a href='/index.php?rp=/login'>login</a></html>",
         # Seed URL should still be visited and produce product candidates.
-        "https://example.com/cart.php?language=english": "<html><a href='/cart.php?a=add&pid=7'>p7</a></html>",
+        "https://example.com/cart.php": "<html><a href='/cart.php?a=add&pid=7'>p7</a></html>",
     }
     client = FakeHttpClient(pages)
     discoverer = LinkDiscoverer(http_client=client, max_depth=1, max_pages=10, max_workers=4)
     result = discoverer.discover(site_name="Example", base_url=root)
 
-    assert "https://example.com/cart.php?language=english" in client.calls
+    assert "https://example.com/cart.php" in client.calls
     assert "https://example.com/cart.php?a=add&pid=7" in result.product_candidates

@@ -116,8 +116,31 @@ def parse_hostbill_page(html: str, final_url: str) -> ParsedItem:
                 name_candidates.append(text)
     name_raw = name_candidates[0] if name_candidates else ""
 
-    description_node = soup.select_one(".bordered-section, .product-box, .cart-item, .plan-description")
+    # Description: search multiple selectors from most specific to least.
+    desc_selectors = [
+        ".product-description",
+        ".plan-description",
+        ".plan-body",
+        ".plan-features",
+        ".bordered-section",
+        ".product-box",
+        ".cart-item",
+        ".content-area",
+    ]
+    description_node = None
+    for sel in desc_selectors:
+        node = soup.select_one(sel)
+        if node:
+            text = _text(node)
+            if text and len(text) > 10:
+                description_node = node
+                break
     description_raw = _text(description_node)[:5000] if description_node else ""
+    # Strip name prefix from description if present.
+    if name_raw and description_raw.startswith(name_raw):
+        stripped = description_raw[len(name_raw):].lstrip("\n").strip()
+        if stripped:
+            description_raw = stripped
 
     locations: list[str] = []
     for node in soup.select("label, strong, .title, .field-name"):
@@ -129,6 +152,8 @@ def parse_hostbill_page(html: str, final_url: str) -> ParsedItem:
     locations = list(dict.fromkeys(locations))
 
     evidence: list[str] = []
+    if has_oos_marker:
+        evidence.append("oos-marker")
     if has_js_errors:
         evidence.append("js-errors-array")
     if has_disabled_oos_button:
@@ -137,6 +162,17 @@ def parse_hostbill_page(html: str, final_url: str) -> ParsedItem:
         evidence.append("no-services-yet")
     if has_order_step:
         evidence.append("order-step")
+    if has_add_id:
+        evidence.append("add-id-url")
+    product_links = _extract_product_links(soup)
+    category_links_list = _extract_category_links(soup)
+    if product_links:
+        evidence.append(f"product-link-count:{len(product_links)}")
+    if category_links_list:
+        evidence.append(f"category-link-count:{len(category_links_list)}")
+    prices = _extract_prices(full_text)
+    if prices:
+        evidence.append("has-pricing")
 
     return ParsedItem(
         platform="HostBill",
@@ -145,10 +181,10 @@ def parse_hostbill_page(html: str, final_url: str) -> ParsedItem:
         in_stock=in_stock,
         name_raw=name_raw,
         description_raw=description_raw,
-        price_raw=", ".join(_extract_prices(full_text)),
+        price_raw=", ".join(prices),
         cycles=_extract_cycles(full_text),
         locations_raw=locations,
         evidence=evidence,
-        product_links=_extract_product_links(soup),
-        category_links=_extract_category_links(soup),
+        product_links=product_links,
+        category_links=category_links_list,
     )

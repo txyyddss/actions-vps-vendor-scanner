@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from urllib.parse import parse_qsl, urljoin, urlparse
+from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
 from bs4 import BeautifulSoup
 
@@ -34,6 +34,14 @@ class LinkDiscoverer:
         self.logger = get_logger("discoverer")
 
     @staticmethod
+    def _strip_language_param(url: str) -> str:
+        """Remove language/lang/locale query params to avoid duplicate crawls."""
+        parsed = urlparse(url)
+        qs = [(k, v) for k, v in parse_qsl(parsed.query, keep_blank_values=True)
+              if k.lower() not in ("language", "lang", "locale")]
+        return urlunparse(parsed._replace(query=urlencode(qs, doseq=True)))
+
+    @staticmethod
     def _seed_urls(root: str) -> set[str]:
         """Executes _seed_urls logic."""
         # Seed multiple likely catalog entry points so login-redirect roots do not end discovery early.
@@ -44,11 +52,8 @@ class LinkDiscoverer:
             urljoin(root, "/store"),
             urljoin(root, "/index.php?rp=/store"),
         }
-        seeded: set[str] = set()
-        for candidate in candidates:
-            seeded.add(normalize_url(candidate, force_english=False))
-            seeded.add(normalize_url(candidate, force_english=True))
-        return seeded
+        # Only seed non-language variants to avoid duplicate crawling.
+        return {normalize_url(candidate, force_english=False) for candidate in candidates}
 
     @staticmethod
     def _extract_links(html: str, base_url: str) -> set[str]:
@@ -75,7 +80,7 @@ class LinkDiscoverer:
             if hidden.get("action") == "add" and hidden.get("id"):
                 links.add(urljoin(base_url, f"/index.php?/cart/&action=add&id={hidden['id']}"))
 
-        return {normalize_url(link) for link in links}
+        return {normalize_url(LinkDiscoverer._strip_language_param(link)) for link in links}
 
     @staticmethod
     def _split_candidates(urls: set[str]) -> tuple[set[str], set[str]]:

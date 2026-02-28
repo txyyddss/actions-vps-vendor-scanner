@@ -113,14 +113,25 @@ def _extract_links(soup: BeautifulSoup) -> tuple[list[str], list[str]]:
         href_lower = href.lower()
         if "a=add&pid=" in href_lower:
             product_links.append(href)
-        elif "/store/" in href_lower:
-            # /store/<cat>/<product> usually includes at least 2 path elements.
-            path = urlparse(href_lower).path
-            store_tail = path.split("/store/")[-1] if "/store/" in path else ""
-            slash_count = store_tail.count("/")
-            if slash_count >= 1:
+            continue
+
+        # Check for /store/ in path or inside rp= query parameter
+        parsed_href = urlparse(href_lower)
+        store_tail = ""
+        if "/store/" in parsed_href.path:
+            store_tail = parsed_href.path.split("/store/", 1)[-1]
+        else:
+            # WHMCS uses rp=/store/xxx/yyy query routes
+            for key, value in parse_qsl(parsed_href.query, keep_blank_values=True):
+                if key.lower() == "rp" and "/store/" in value.lower():
+                    store_tail = value.lower().split("/store/", 1)[-1]
+                    break
+
+        if store_tail:
+            segments = [s for s in store_tail.split("/") if s]
+            if len(segments) >= 2:
                 product_links.append(href)
-            else:
+            elif len(segments) == 1:
                 category_links.append(href)
     return list(dict.fromkeys(product_links)), list(dict.fromkeys(category_links))
 
@@ -168,8 +179,35 @@ def parse_whmcs_page(html: str, final_url: str) -> ParsedItem:
     is_category = (is_store_category or bool(category_links or product_links)) and not confproduct and not is_product
 
     name_raw = _pick_name(soup)
-    description_node = soup.select_one(".product-info, #frmConfigureProduct, .message-danger, .message")
+    # Description: search from most specific to least specific selectors.
+    # Avoid .product-info if it was already used for the name (would duplicate).
+    desc_selectors = [
+        "#productDescription",
+        ".product-description",
+        ".product-info .description",
+        "#frmConfigureProduct",
+        ".message-danger",
+        ".message",
+        ".panel-body",
+        ".bordered-section",
+        ".product-box",
+        ".cart-item",
+        ".product-info",
+    ]
+    description_node = None
+    for sel in desc_selectors:
+        node = soup.select_one(sel)
+        if node:
+            text = _text(node)
+            if text and len(text) > 10:
+                description_node = node
+                break
     description_raw = _text(description_node)[:5000] if description_node else ""
+    # If description contains the name as prefix, strip it to avoid redundancy.
+    if name_raw and description_raw.startswith(name_raw):
+        stripped = description_raw[len(name_raw):].lstrip("\n").strip()
+        if stripped:
+            description_raw = stripped
     prices = _extract_prices(full_text)
     cycles = _extract_cycles(soup)
     locations = _extract_locations(soup)
@@ -181,6 +219,16 @@ def parse_whmcs_page(html: str, final_url: str) -> ParsedItem:
         evidence.append("oos-marker")
     if "message-danger" in html.lower():
         evidence.append("message-danger")
+    if soup.select_one("#frmConfigureProduct"):
+        evidence.append("has-order-form")
+    if soup.select_one("#sectionCycles, .check-cycle, select[name*=cycle]"):
+        evidence.append("has-configurable-options")
+    if prices:
+        evidence.append("has-pricing")
+    if product_links:
+        evidence.append(f"product-link-count:{len(product_links)}")
+    if category_links:
+        evidence.append(f"category-link-count:{len(category_links)}")
 
     # Extract the name from url if there's no name for the category scanner
     if not name_raw and store_segments:

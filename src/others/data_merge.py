@@ -4,34 +4,46 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qsl, unquote, urlencode, urlparse, urlunparse
+from urllib.parse import unquote
 
 from src.misc.config_loader import dump_json, load_config, load_json
 from src.misc.logger import get_logger
 from src.misc.url_normalizer import canonicalize_for_merge, classify_url
 
 _GLOBAL_CONFIG = load_config("config/config.json")
-SOURCE_PRIORITY = _GLOBAL_CONFIG.get("data_merge", {}).get("source_priority", {
+SCAN_TYPE_PRIORITY = _GLOBAL_CONFIG.get("data_merge", {}).get("source_priority", {
     "discoverer": 1,
     "category_scanner": 2,
     "product_scanner": 3,
 })
 
 
-def _source_weight(source: str) -> int:
-    """Executes _source_weight logic."""
-    return SOURCE_PRIORITY.get(source, 0)
+def _scan_weight(scan_type: str) -> int:
+    """Return numeric priority for a scan type (higher = more authoritative)."""
+    return SCAN_TYPE_PRIORITY.get(scan_type, 0)
 
 
-def _remove_language(url: str) -> str:
-    parsed = urlparse(url)
-    qs = [(k, v) for k, v in parse_qsl(parsed.query, keep_blank_values=True) if k.lower() not in ("language", "lang", "locale")]
-    return urlunparse(parsed._replace(query=urlencode(qs, doseq=True)))
+def _coerce_in_stock(record: dict[str, Any]) -> int:
+    """Convert any stock representation to integer: 1=in_stock, 0=oos, -1=unknown."""
+    # New-style integer field
+    if "in_stock" in record:
+        val = record["in_stock"]
+        if isinstance(val, int) and val in {-1, 0, 1}:
+            return val
+    # Legacy string field
+    legacy = str(record.get("stock_status", "")).strip().lower()
+    if legacy == "in_stock":
+        return 1
+    if legacy == "out_of_stock":
+        return 0
+    return -1
+
 
 def _sanitize_record(record: dict[str, Any]) -> dict[str, Any] | None:
-    """Executes _sanitize_record logic."""
-    canonical_url = canonicalize_for_merge(str(record.get("canonical_url") or record.get("source_url") or ""))
-    canonical_url = unquote(_remove_language(canonical_url))
+    """Clean, normalize, and validate a single incoming record."""
+    canonical_url = unquote(
+        canonicalize_for_merge(str(record.get("canonical_url") or record.get("source_url") or ""))
+    )
 
     classification = classify_url(canonical_url)
     if classification.is_invalid_product_url:
@@ -41,36 +53,55 @@ def _sanitize_record(record: dict[str, Any]) -> dict[str, Any] | None:
     if "\n" in name_raw:
         name_raw = name_raw.splitlines()[0].strip()
 
-    source = str(record.get("source_priority", "product_scanner"))
-    
-    # Process scan_type, type (product/category), and time_used if present
-    scan_type = str(record.get("scan_type", source))
+    # Prefer scan_type; fall back to legacy source_priority
+    scan_type = str(record.get("scan_type", record.get("source_priority", "product_scanner")))
     item_type = str(record.get("type", "product"))
     time_used = record.get("time_used", 0)
 
-    sanitized = {
+    sanitized: dict[str, Any] = {
         "site": str(record.get("site", "")),
         "platform": str(record.get("platform", "")),
         "canonical_url": canonical_url,
-        "source_url": unquote(_remove_language(str(record.get("source_url") or canonical_url))),
-        "source_priority": source,
+        "source_url": unquote(
+            canonicalize_for_merge(str(record.get("source_url") or canonical_url))
+        ),
         "scan_type": scan_type,
         "type": item_type,
         "time_used": time_used,
         "name_raw": name_raw,
         "description_raw": str(record.get("description_raw", "")),
+        "in_stock": _coerce_in_stock(record),
         "evidence": list(record.get("evidence", [])),
         "first_seen_at": record.get("first_seen_at"),
         "last_seen_at": record.get("last_seen_at"),
     }
-    
-    # Include these fields only if they exist, to allow removing them from scanners
-    if "stock_status" in record: sanitized["stock_status"] = str(record.get("stock_status", "unknown"))
-    if "price_raw" in record: sanitized["price_raw"] = str(record.get("price_raw", ""))
-    if "cycles" in record: sanitized["cycles"] = list(record.get("cycles", []))
-    if "locations_raw" in record: sanitized["locations_raw"] = list(record.get("locations_raw", []))
-    
+
+    # Include optional detail fields only when present
+    if "price_raw" in record:
+        sanitized["price_raw"] = str(record.get("price_raw", ""))
+    if "cycles" in record:
+        sanitized["cycles"] = list(record.get("cycles", []))
+    if "locations_raw" in record:
+        sanitized["locations_raw"] = list(record.get("locations_raw", []))
+
     return sanitized
+
+
+def _content_dedup_key(record: dict[str, Any]) -> tuple[str, str, str] | None:
+    """Build a key for same-content deduplication.
+
+    Products with identical (name_raw, description_raw, site) are considered
+    duplicates and merged.  Skip records with ``oos-marker`` evidence because
+    OOS template pages share identical boilerplate text.
+    """
+    if "oos-marker" in record.get("evidence", []):
+        return None
+    name = str(record.get("name_raw", "")).strip()
+    desc = str(record.get("description_raw", "")).strip()
+    site = str(record.get("site", "")).strip()
+    if not name or not site:
+        return None
+    return (site, name, desc)
 
 
 def merge_records(
@@ -79,15 +110,22 @@ def merge_records(
     category_records: list[dict[str, Any]],
     previous_products: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    """Executes merge_records logic."""
+    """Merge scanner outputs, deduplicate by URL and content, preserve timestamps."""
     logger = get_logger("data_merge")
-    previous_by_url = {item.get("canonical_url"): item for item in (previous_products or [])}
+    # Re-sanitize previous products to drop stale invalid URLs (e.g. cart.php?a=view)
+    previous_by_url: dict[str, dict[str, Any]] = {}
+    for old_item in (previous_products or []):
+        cleaned = _sanitize_record(old_item)
+        if cleaned:
+            previous_by_url[cleaned["canonical_url"]] = cleaned
+
     merged: dict[str, dict[str, Any]] = {}
 
-    all_records = []
+    all_records: list[dict[str, Any]] = []
     all_records.extend(discoverer_records)
     all_records.extend(product_records)
     all_records.extend(category_records)
+
     for incoming in all_records:
         sanitized = _sanitize_record(incoming)
         if not sanitized:
@@ -97,13 +135,40 @@ def merge_records(
         if existing is None:
             merged[url] = sanitized
         else:
-            weight_new = _source_weight(sanitized["source_priority"])
-            weight_old = _source_weight(existing["source_priority"])
+            weight_new = _scan_weight(sanitized["scan_type"])
+            weight_old = _scan_weight(existing["scan_type"])
             if weight_new > weight_old:
                 merged[url] = sanitized
-            elif weight_new == weight_old and len(sanitized.get("evidence", [])) > len(existing.get("evidence", [])):
+            elif weight_new == weight_old and len(sanitized.get("evidence", [])) > len(
+                existing.get("evidence", [])
+            ):
                 merged[url] = sanitized
 
+    # --- Same-content deduplication ---
+    content_seen: dict[tuple[str, str, str], str] = {}  # content_key → canonical_url
+    urls_to_drop: set[str] = set()
+    for url, record in sorted(merged.items(), key=lambda kv: -_scan_weight(kv[1]["scan_type"])):
+        key = _content_dedup_key(record)
+        if key is None:
+            continue
+        if key in content_seen:
+            # Keep the one with higher scan weight (already sorted desc), drop this one
+            winner_url = content_seen[key]
+            winner = merged[winner_url]
+            # Merge evidence from duplicate into winner
+            combined_evidence = list(dict.fromkeys(winner.get("evidence", []) + record.get("evidence", [])))
+            winner["evidence"] = combined_evidence
+            if not combined_evidence.__contains__("content-dedup-merged"):
+                winner["evidence"].append("content-dedup-merged")
+            urls_to_drop.add(url)
+        else:
+            content_seen[key] = url
+    for url in urls_to_drop:
+        merged.pop(url, None)
+    if urls_to_drop:
+        logger.info("content-dedup removed %s duplicate records", len(urls_to_drop))
+
+    # --- Timestamp bookkeeping ---
     now = datetime.now(timezone.utc).isoformat()
     for url, record in merged.items():
         old = previous_by_url.get(url)
@@ -121,7 +186,7 @@ def diff_products(
     old_products: list[dict[str, Any]],
     new_products: list[dict[str, Any]],
 ) -> tuple[list[str], list[str], list[str]]:
-    """Executes diff_products logic."""
+    """Return (added_urls, deleted_urls, stock_changed_urls)."""
     old_map = {item.get("canonical_url"): item for item in old_products}
     new_map = {item.get("canonical_url"): item for item in new_products}
 
@@ -132,13 +197,13 @@ def diff_products(
 
     changed_stock: list[str] = []
     for url in sorted(old_urls & new_urls):
-        if old_map[url].get("stock_status") != new_map[url].get("stock_status"):
+        if old_map[url].get("in_stock") != new_map[url].get("in_stock"):
             changed_stock.append(url)
     return added, deleted, changed_stock
 
 
 def load_products(path: str = "data/products.json") -> list[dict[str, Any]]:
-    """Executes load_products logic."""
+    """Load product list from JSON file."""
     if not Path(path).exists():
         return []
     payload = load_json(path)
@@ -146,16 +211,17 @@ def load_products(path: str = "data/products.json") -> list[dict[str, Any]]:
 
 
 def write_products(products: list[dict[str, Any]], run_id: str, path: str = "data/products.json") -> None:
-    """Executes write_products logic."""
-    in_stock = sum(1 for item in products if item.get("stock_status") == "in_stock")
-    out_of_stock = sum(1 for item in products if item.get("stock_status") == "out_of_stock")
+    """Write product list to JSON with computed stats."""
+    in_stock_count = sum(1 for item in products if item.get("in_stock") == 1)
+    oos_count = sum(1 for item in products if item.get("in_stock") == 0)
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "run_id": run_id,
         "stats": {
             "total_products": len(products),
-            "in_stock": in_stock,
-            "out_of_stock": out_of_stock,
+            "in_stock": in_stock_count,
+            "out_of_stock": oos_count,
+            "unknown": len(products) - in_stock_count - oos_count,
         },
         "products": products,
     }

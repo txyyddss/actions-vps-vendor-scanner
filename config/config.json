@@ -188,7 +188,7 @@
     ]
   },
   "dashboard": {
-    "title": "TX Cicken dashboard",
+    "title": "TX Chicken Dashboard",
     "default_theme": "dark",
     "show_stats": true
   },

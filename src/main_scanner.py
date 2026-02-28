@@ -79,13 +79,13 @@ def _discover_mode(sites: list[dict[str, Any]], config: dict[str, Any], http_cli
                             "site": site["name"],
                             "platform": site.get("category", ""),
                             "scan_type": "discoverer",
-                            "source_priority": "discoverer",
                             "canonical_url": url,
                             "source_url": url,
                             "type": "product",
                             "time_used": 0,
                             "name_raw": "",
                             "description_raw": "",
+                            "in_stock": -1,
                             "evidence": ["discoverer-candidate"],
                         }
                     )
@@ -95,13 +95,13 @@ def _discover_mode(sites: list[dict[str, Any]], config: dict[str, Any], http_cli
                             "site": site["name"],
                             "platform": site.get("category", ""),
                             "scan_type": "discoverer",
-                            "source_priority": "discoverer",
                             "canonical_url": url,
                             "source_url": url,
                             "type": "category",
                             "time_used": 0,
                             "name_raw": "",
                             "description_raw": "",
+                            "in_stock": -1,
                             "evidence": ["discoverer-category-candidate"],
                         }
                     )
@@ -201,7 +201,7 @@ def _merge_mode(config: dict[str, Any]) -> list[dict[str, Any]]:
 
     tg = TelegramSender(config.get("telegram", {}))
     if added or deleted:
-        tg.send_product_changes(new_urls=added, deleted_urls=deleted)
+        tg.send_product_changes(new_urls=added, deleted_urls=deleted, products=merged)
     tg.send_run_stats(
         title="Scanner Run Summary",
         stats={
@@ -218,8 +218,9 @@ def _merge_mode(config: dict[str, Any]) -> list[dict[str, Any]]:
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "stats": {
             "total_products": len(merged),
-            "in_stock": sum(1 for item in merged if item.get("stock_status") == "in_stock"),
-            "out_of_stock": sum(1 for item in merged if item.get("stock_status") == "out_of_stock"),
+            "in_stock": sum(1 for item in merged if item.get("in_stock") == 1),
+            "out_of_stock": sum(1 for item in merged if item.get("in_stock") == 0),
+            "unknown": sum(1 for item in merged if item.get("in_stock") == -1),
         },
         "products": merged,
     }
