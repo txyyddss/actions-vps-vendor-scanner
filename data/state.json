@@ -1,0 +1,66 @@
+{
+  "sites": {
+    "WAP.ac": {
+      "whmcs_gid_highwater": 24,
+      "whmcs_pid_highwater": 132
+    },
+    "VMISS": {
+      "whmcs_gid_highwater": 18,
+      "whmcs_pid_highwater": 107
+    },
+    "Kaze Network Limited": {
+      "whmcs_gid_highwater": 11
+    },
+    "Frantech": {
+      "whmcs_gid_highwater": 52
+    },
+    "GGVision": {
+      "whmcs_gid_highwater": 19
+    },
+    "NMCloud": {
+      "whmcs_gid_highwater": 14,
+      "whmcs_pid_highwater": 30
+    },
+    "BageVM": {
+      "whmcs_gid_highwater": 16,
+      "whmcs_pid_highwater": 94
+    },
+    "ColoCrossing": {
+      "whmcs_gid_highwater": 8,
+      "whmcs_pid_highwater": 171
+    },
+    "ZgoVPS": {
+      "hostbill_catid_highwater": 23,
+      "hostbill_pid_highwater": 132
+    },
+    "Backwaves": {
+      "whmcs_gid_highwater": 20,
+      "whmcs_pid_highwater": 59
+    },
+    "BFFYun": {
+      "whmcs_gid_highwater": 5
+    },
+    "RackNerd": {
+      "whmcs_gid_highwater": 97
+    },
+    "Boil Network": {
+      "whmcs_gid_highwater": 67,
+      "whmcs_pid_highwater": 347
+    },
+    "RFCHOST": {
+      "whmcs_gid_highwater": 35,
+      "whmcs_pid_highwater": 258
+    },
+    "BestVM": {
+      "whmcs_gid_highwater": 33
+    },
+    "GigsGigsCloud": {
+      "hostbill_catid_highwater": 93,
+      "hostbill_pid_highwater": 545
+    },
+    "DMIT": {
+      "whmcs_pid_highwater": 236
+    }
+  },
+  "updated_at": "2026-02-28T17:52:50.697850+00:00"
+}
