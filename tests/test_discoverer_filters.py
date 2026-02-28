@@ -41,6 +41,10 @@ def test_discoverer_skips_non_english_and_utility_paths() -> None:
         normalize_url(
             "https://example.com/index.php?currency=8&language=english&rp=%2Fannouncements%2F59%2Fx.html"
         ),
+        "https://example.com/cdn-cgi/content?id=123",
+        "https://example.com/cart&action=default&languagechange=English",
+        "https://example.com/index.php?action=embed&cmd=hbchat",
+        "https://example.com/index.php?languagechange=english",
     }
     pages = {
         "https://example.com/": """
@@ -55,6 +59,10 @@ def test_discoverer_skips_non_english_and_utility_paths() -> None:
               <a href="/store/vps/basic?currency=2">product-currency</a>
               <a href="/index.php?currency=8&language=english&rp=%2Fannouncements%2F59%2Fx.html">route-ann</a>
               <a href="/announcements?language=norwegian">ann</a>
+              <a href="/cdn-cgi/content?id=123">cf</a>
+              <a href="/cart&action=default&languagechange=English">lang-path</a>
+              <a href="/index.php?action=embed&cmd=hbchat">chat</a>
+              <a href="/index.php?languagechange=english">lang-change</a>
               <a href="/store/vps/basic">product</a>
             </html>
         """,
@@ -107,3 +115,71 @@ def test_discoverer_seed_urls_find_catalog_when_root_only_shows_login() -> None:
 def test_discoverer_clamps_invalid_worker_count() -> None:
     discoverer = LinkDiscoverer(http_client=FakeHttpClient({}), max_workers=0)
     assert discoverer.max_workers == 1
+
+
+def test_discoverer_honors_base_href_for_relative_links() -> None:
+    pages = {
+        "https://example.com/products": """
+            <html>
+              <head><base href="https://example.com/"></head>
+              <body><a href="cart/hk-simplecloud/">category</a></body>
+            </html>
+        """,
+        "https://example.com/cart/hk-simplecloud": "<html></html>",
+    }
+    client = FakeHttpClient(pages)
+    discoverer = LinkDiscoverer(http_client=client, max_depth=1, max_pages=10, max_workers=1)
+    result = discoverer.discover(site_name="Example", base_url="https://example.com/products")
+
+    assert "https://example.com/cart/hk-simplecloud" in result.visited_urls
+    assert "https://example.com/products/cart/hk-simplecloud" not in result.visited_urls
+
+
+def test_discoverer_classifies_hostbill_slug_category_from_page_links() -> None:
+    root = "https://example.com/cart/hk-simplecloud"
+    pages = {
+        root: """
+            <html>
+              <head><base href="https://example.com/"></head>
+              <body>
+                <h2>HK SimpleCloud</h2>
+                <a href="cart/hk--global-route/">global</a>
+                <a href="cart/hk--premium-route/">premium</a>
+              </body>
+            </html>
+        """,
+        "https://example.com/cart/hk--global-route": "<html></html>",
+        "https://example.com/cart/hk--premium-route": "<html></html>",
+    }
+    client = FakeHttpClient(pages)
+    discoverer = LinkDiscoverer(http_client=client, max_depth=0, max_pages=10, max_workers=1)
+    result = discoverer.discover(site_name="Example", base_url=root)
+
+    assert result.category_candidates == [root]
+    assert result.product_candidates == []
+
+
+def test_discoverer_classifies_hostbill_slug_product_from_order_form() -> None:
+    root = "https://example.com/cart/hk--global-route"
+    pages = {
+        root: """
+            <html>
+              <head><base href="https://example.com/"></head>
+              <body>
+                <h2>HK Global Route</h2>
+                <div>$15.00 USD monthly</div>
+                <form>
+                  <input type="hidden" name="subproducts[0]" value="0">
+                  <input type="hidden" name="make" value="order">
+                </form>
+                <a href="cart/hk-simplecloud/">category</a>
+                <a href="cart/hk--premium-route/">sibling</a>
+              </body>
+            </html>
+        """,
+    }
+    client = FakeHttpClient(pages)
+    discoverer = LinkDiscoverer(http_client=client, max_depth=0, max_pages=10, max_workers=1)
+    result = discoverer.discover(site_name="Example", base_url=root)
+
+    assert result.product_candidates == [root]

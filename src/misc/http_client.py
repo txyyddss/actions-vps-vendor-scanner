@@ -465,18 +465,22 @@ class HttpClient:
             self.circuit_breaker.record_success(domain)
         else:
             self.circuit_breaker.record_failure(domain)
-        if last_error and "500 Internal" in last_error:
-            self.logger.debug(
-                "fetch failed completely url=%s reason=%s",
-                normalized_url,
-                last_error or "fetch-failed",
-            )
-        else:
-            self.logger.error(
-                "fetch failed completely url=%s reason=%s",
-                normalized_url,
-                last_error or "fetch-failed",
-            )
+        suppress_failure_log = last_status_code == 404 or (
+            last_error is not None and "status=404" in last_error
+        )
+        if not suppress_failure_log:
+            if last_error and "500 Internal" in last_error:
+                self.logger.debug(
+                    "fetch failed completely url=%s reason=%s",
+                    normalized_url,
+                    last_error or "fetch-failed",
+                )
+            else:
+                self.logger.error(
+                    "fetch failed completely url=%s reason=%s",
+                    normalized_url,
+                    last_error or "fetch-failed",
+                )
 
         return FetchResult(
             ok=False,

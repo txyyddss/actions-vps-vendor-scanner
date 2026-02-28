@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup
 
@@ -25,6 +25,9 @@ _text = bs4_text
 
 
 _extract_prices = extract_prices
+
+
+_HOSTBILL_ADD_ID_PATTERN = re.compile(r"(?:[?&])action=add&id=(\d+)(?:[&#]|$)", re.IGNORECASE)
 
 
 def _oos_markers() -> tuple[str, ...]:
@@ -59,47 +62,84 @@ def _extract_inline_links(html: str) -> list[str]:
     return list(dict.fromkeys(match.group(1) for match in pattern.finditer(html)))
 
 
-def _extract_product_links(soup: BeautifulSoup, html: str) -> list[str]:
+def _document_base_url(soup: BeautifulSoup, final_url: str) -> str:
+    """Resolve links against the HTML base href when present."""
+    base_tag = soup.select_one("base[href]")
+    if not base_tag:
+        return final_url
+    href = str(base_tag.get("href", "")).strip()
+    if not href:
+        return final_url
+    return urljoin(final_url, href)
+
+
+def _resolve_document_link(raw_url: str, document_url: str) -> str:
+    """Resolve a raw page link against the document base URL."""
+    return urljoin(document_url, raw_url.strip())
+
+
+def _is_hostbill_cart_url(url: str) -> bool:
+    """Return whether a URL points at a HostBill cart route."""
+    parsed = urlparse(url)
+    lowered = url.lower()
+    return (
+        "/cart/" in parsed.path.lower()
+        or (parsed.query.startswith("/") and "/cart/" in parsed.query.lower())
+        or "cmd=cart" in lowered
+    )
+
+
+def _has_numeric_add_id(url: str) -> bool:
+    """Return whether a URL has a numeric HostBill add-id action."""
+    return _HOSTBILL_ADD_ID_PATTERN.search(url) is not None
+
+
+def _extract_product_links(soup: BeautifulSoup, html: str, final_url: str) -> list[str]:
     """Executes _extract_product_links logic."""
+    document_url = _document_base_url(soup, final_url)
     links: list[str] = []
 
     # HostBill frequently embeds product IDs inside forms.
     for form in soup.select("form"):
         hidden = {i.get("name"): i.get("value") for i in form.select("input[type=hidden][name]")}
-        if hidden.get("action") == "add" and hidden.get("id"):
-            links.append(f"/index.php?/cart/&action=add&id={hidden['id']}")
+        add_id = str(hidden.get("id", "")).strip()
+        if hidden.get("action") == "add" and add_id.isdigit():
+            links.append(
+                _resolve_document_link(f"/index.php?/cart/&action=add&id={add_id}", document_url)
+            )
 
     for anchor in soup.select("a[href]"):
-        href = str(anchor.get("href", ""))
-        lower = href.lower()
-        if "action=add&id=" in lower or re.search(r"[?&]id=\d+", lower):
-            links.append(href)
+        href = str(anchor.get("href", "")).strip()
+        if not href:
+            continue
+        resolved = _resolve_document_link(href, document_url)
+        if _is_hostbill_cart_url(resolved) and _has_numeric_add_id(resolved):
+            links.append(resolved)
 
     for candidate in _extract_inline_links(html):
-        lower = candidate.lower()
-        if "action=add&id=" in lower or re.search(r"[?&]id=\d+", lower):
-            links.append(candidate)
+        resolved = _resolve_document_link(candidate, document_url)
+        if _is_hostbill_cart_url(resolved) and _has_numeric_add_id(resolved):
+            links.append(resolved)
 
     return list(dict.fromkeys(links))
 
 
-def _extract_category_links(soup: BeautifulSoup, html: str) -> list[str]:
+def _extract_category_links(soup: BeautifulSoup, html: str, final_url: str) -> list[str]:
     """Executes _extract_category_links logic."""
+    document_url = _document_base_url(soup, final_url)
     links: list[str] = []
     for anchor in soup.select("a[href]"):
-        href = str(anchor.get("href", ""))
-        lower = href.lower()
-        if "/cart/" in lower and "action=add&id=" not in lower and "step=3" not in lower:
-            links.append(href)
-        if "cmd=cart&cat_id=" in lower:
-            links.append(href)
+        href = str(anchor.get("href", "")).strip()
+        if not href:
+            continue
+        resolved = _resolve_document_link(href, document_url)
+        if "cmd=cart&cat_id=" in resolved.lower():
+            links.append(resolved)
 
     for candidate in _extract_inline_links(html):
-        lower = candidate.lower()
-        if "/cart/" in lower and "action=add&id=" not in lower and "step=3" not in lower:
-            links.append(candidate)
-        if "cmd=cart&cat_id=" in lower:
-            links.append(candidate)
+        resolved = _resolve_document_link(candidate, document_url)
+        if "cmd=cart&cat_id=" in resolved.lower():
+            links.append(resolved)
     return list(dict.fromkeys(links))
 
 
@@ -144,11 +184,23 @@ def parse_hostbill_page(html: str, final_url: str) -> ParsedItem:
 
     # Product validity signals for HostBill are multi-source and theme dependent.
     is_non_product_redirect = any(marker in final_lower for marker in NON_PRODUCT_REDIRECT_MARKERS)
-    product_links = _extract_product_links(soup, cleaned_html)
-    category_links_list = _extract_category_links(soup, cleaned_html)
+    product_links = _extract_product_links(soup, cleaned_html, final_url)
+    category_links_list = _extract_category_links(soup, cleaned_html, final_url)
     prices = _extract_prices(full_text)
     has_order_step = "step=3" in final_lower
     has_add_id = "action=add&id=" in final_lower
+    has_order_form = False
+    for form in soup.select("form"):
+        hidden = {i.get("name"): i.get("value") for i in form.select("input[type=hidden][name]")}
+        if str(hidden.get("make", "")).strip().lower() == "order":
+            has_order_form = True
+            break
+        if any(str(name).startswith("subproducts[") for name in hidden):
+            has_order_form = True
+            break
+        if any(str(name).startswith("addon[") for name in hidden):
+            has_order_form = True
+            break
     has_oos_marker = any(marker in lowered for marker in active_oos_markers)
     lowered_html = cleaned_html.lower()
     has_js_errors = "var errors" in lowered_html and any(
@@ -165,7 +217,7 @@ def parse_hostbill_page(html: str, final_url: str) -> ParsedItem:
         or has_js_errors
         or has_disabled_oos_button
     )
-    has_product_signals = has_order_step or has_confirmed_add_id
+    has_product_signals = has_order_step or has_confirmed_add_id or has_order_form
     has_category_signals = bool(category_links_list) or bool(product_links)
     has_non_navigation_content = has_order_step or bool(product_links) or bool(prices)
     has_blocking_no_services = NO_SERVICES_MARKER in lowered and not has_non_navigation_content

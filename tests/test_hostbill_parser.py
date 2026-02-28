@@ -46,7 +46,10 @@ def test_parse_hostbill_extracts_product_links_from_inline_script() -> None:
     </body></html>
     """
     parsed = parse_hostbill_page(html, "https://clients.example.com/?cmd=cart&cat_id=3")
-    assert "/index.php?/cart/special-offer/&action=add&id=122&cycle=a" in parsed.product_links
+    assert (
+        "https://clients.example.com/index.php?/cart/special-offer/&action=add&id=122&cycle=a"
+        in parsed.product_links
+    )
     assert parsed.is_category is True
 
 
@@ -109,6 +112,51 @@ def test_parse_hostbill_invalid_add_id_listing_is_not_product() -> None:
     assert parsed.is_category is False
     assert parsed.in_stock is None
     assert "no-services-yet" in parsed.evidence
+
+
+def test_parse_hostbill_ignores_cdn_cgi_links_as_product_signals() -> None:
+    html = """
+    <html><body>
+    <a href="/cdn-cgi/content?id=12345">challenge</a>
+    </body></html>
+    """
+    parsed = parse_hostbill_page(html, "https://clients.example.com/index.php?/cart/&action=add&id=77")
+    assert parsed.product_links == []
+    assert parsed.is_product is False
+    assert parsed.is_category is False
+
+
+def test_parse_hostbill_ignores_empty_add_id_links() -> None:
+    html = """
+    <html><body>
+    <a href="cart&action=add&id=&cat_id=10">broken</a>
+    <form>
+      <input type="hidden" name="action" value="add">
+      <input type="hidden" name="id" value="">
+    </form>
+    </body></html>
+    """
+    parsed = parse_hostbill_page(html, "https://clients.example.com/?cmd=cart&cat_id=10")
+    assert parsed.product_links == []
+    assert "product-link-count:1" not in parsed.evidence
+    assert parsed.is_product is False
+
+
+def test_parse_hostbill_slug_product_uses_order_form_signal() -> None:
+    html = """
+    <html><body>
+    <h2>Global Route Cloud</h2>
+    <div>$12.00 USD monthly</div>
+    <form>
+      <input type="hidden" name="subproducts[0]" value="0">
+      <input type="hidden" name="addon[0]" value="0">
+      <input type="hidden" name="make" value="order">
+    </form>
+    </body></html>
+    """
+    parsed = parse_hostbill_page(html, "https://clients.example.com/cart/global-route")
+    assert parsed.is_product is True
+    assert parsed.in_stock is True
 
 
 def test_parse_hostbill_uses_runtime_oos_markers(monkeypatch) -> None:

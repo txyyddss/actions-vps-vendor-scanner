@@ -69,6 +69,8 @@ class UrlClassification:
     url: str
     is_invalid_product_url: bool
     reason: str
+
+
 def _normalize_query_key(key: str) -> str:
     """Executes _normalize_query_key logic."""
     normalized = key.strip().lower().lstrip("&")
@@ -244,14 +246,29 @@ def should_skip_discovery_url(url: str) -> tuple[bool, str]:
         if pattern in parsed.path:
             return True, f"blocked-path:{pattern}"
 
+    if any(segment == "cdn-cgi" for segment in parsed.path.split("/") if segment):
+        return True, "blocked-path:cdn-cgi"
+
+    if "&" in parsed.path:
+        return True, "malformed-path-ampersand"
+
     if parsed.path.endswith(tuple(invalid_extensions)):
         return True, "media-or-static-file"
 
     query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
+    query_map = {_normalize_query_key(key): value for key, value in query_pairs}
+    if query_map.get("action", "").strip().lower() == "embed" and query_map.get(
+        "cmd", ""
+    ).strip().lower() == "hbchat":
+        return True, "blocked-query:hbchat"
+
     for key, value in query_pairs:
         key_lower = _normalize_query_key(key)
         if key_lower == "currency":
             return True, "blocked-query:currency"
+
+        if key_lower == "languagechange":
+            return True, "blocked-query:languagechange"
 
         if key_lower in language_query_keys:
             language_tag = value.strip().lower()

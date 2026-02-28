@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 
 from src.misc.flaresolverr_client import FlareSolverrResult
@@ -209,9 +210,10 @@ def test_http_client_accepts_flaresolverr_no_challenge_content(monkeypatch) -> N
     assert result.text == "<html>ok</html>"
 
 
-def test_http_client_non_challenge_404_is_failure_and_preserves_status(monkeypatch) -> None:
+def test_http_client_non_challenge_404_is_failure_and_preserves_status(monkeypatch, caplog) -> None:
     client = _build_client()
     client.flaresolverr_enabled = False
+    caplog.set_level(logging.ERROR, logger="http_client")
 
     monkeypatch.setattr(
         client,
@@ -234,6 +236,7 @@ def test_http_client_non_challenge_404_is_failure_and_preserves_status(monkeypat
     assert result.status_code == 404
     assert result.final_url == "https://example.com/final-missing"
     assert result.tier == "direct"
+    assert not any("fetch failed completely" in record.getMessage() for record in caplog.records)
 
 
 def test_http_client_non_challenge_403_requires_real_fallback_success(monkeypatch) -> None:

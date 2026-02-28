@@ -13,6 +13,7 @@ from src.misc.config_loader import coerce_positive_int
 from src.misc.http_client import HttpClient
 from src.misc.logger import get_logger
 from src.misc.url_normalizer import is_same_domain, normalize_url, should_skip_discovery_url
+from src.parsers.hostbill_parser import parse_hostbill_page
 
 
 @dataclass(slots=True)
@@ -47,12 +48,53 @@ class LinkDiscoverer:
     def _strip_language_param(url: str) -> str:
         """Remove language/lang/locale query params to avoid duplicate crawls."""
         parsed = urlparse(url)
+        if parsed.query.startswith("/") and "/cart/" in parsed.query.lower():
+            route_part, separator, remainder = parsed.query.partition("&")
+            qs = [
+                (k, v)
+                for k, v in parse_qsl(remainder, keep_blank_values=True)
+                if k.lower() not in ("language", "lang", "locale")
+            ]
+            query = route_part if not qs else f"{route_part}&{urlencode(qs, doseq=True)}"
+            return urlunparse(parsed._replace(query=query))
         qs = [
             (k, v)
             for k, v in parse_qsl(parsed.query, keep_blank_values=True)
             if k.lower() not in ("language", "lang", "locale")
         ]
         return urlunparse(parsed._replace(query=urlencode(qs, doseq=True)))
+
+    @staticmethod
+    def _document_base_url(soup: BeautifulSoup, page_url: str) -> str:
+        """Resolve links against the HTML base href when present."""
+        base_tag = soup.select_one("base[href]")
+        if not base_tag:
+            return page_url
+        href = str(base_tag.get("href", "")).strip()
+        if not href:
+            return page_url
+        return urljoin(page_url, href)
+
+    @staticmethod
+    def _is_hostbill_like_url(url: str) -> bool:
+        """Return whether a URL looks like a HostBill cart page."""
+        parsed = urlparse(url)
+        lowered = url.lower()
+        return (
+            "/cart/" in parsed.path.lower()
+            or (parsed.query.startswith("/") and "/cart/" in parsed.query.lower())
+            or "cmd=cart" in lowered
+        )
+
+    @staticmethod
+    def _hostbill_slug_url(url: str) -> str | None:
+        """Return the normalized `/cart/<slug>` URL when this is a single-slug HostBill route."""
+        normalized = normalize_url(LinkDiscoverer._strip_language_param(url), force_english=False)
+        parsed = urlparse(normalized)
+        segments = [segment for segment in parsed.path.split("/") if segment]
+        if len(segments) != 2 or segments[0].lower() != "cart":
+            return None
+        return normalized
 
     @staticmethod
     def _seed_urls(root: str) -> set[str]:
@@ -72,28 +114,30 @@ class LinkDiscoverer:
     def _extract_links(html: str, base_url: str) -> set[str]:
         """Executes _extract_links logic."""
         soup = BeautifulSoup(html, "lxml")
+        document_url = LinkDiscoverer._document_base_url(soup, base_url)
         links: set[str] = set()
 
         for anchor in soup.select("a[href]"):
             href = anchor.get("href")
             if href:
-                links.add(urljoin(base_url, str(href)))
+                links.add(urljoin(document_url, str(href)))
 
         # Heuristic extraction from script blobs and inline URLs.
         pattern = re.compile(
-            r"""(https?://[^'"\s<>]+|(?:/index\.php\?/cart/[^'"\s<>]+|/store/[^'"\s<>]+|cart\.php\?[^'"\s<>]+))""",
+            r"""(https?://[^'"\s<>]+|(?:/index\.php\?/cart/[^'"\s<>]+|/store/[^'"\s<>]+|/cart/[^'"\s<>]+|cart/[^'"\s<>]+|cart\.php\?[^'"\s<>]+))""",
             re.IGNORECASE,
         )
         for match in pattern.finditer(html):
-            links.add(urljoin(base_url, match.group(1)))
+            links.add(urljoin(document_url, match.group(1)))
 
         # Forms with HostBill product IDs.
         for form in soup.select("form"):
             hidden = {
                 i.get("name"): i.get("value") for i in form.select("input[type=hidden][name]")
             }
-            if hidden.get("action") == "add" and hidden.get("id"):
-                links.add(urljoin(base_url, f"/index.php?/cart/&action=add&id={hidden['id']}"))
+            add_id = str(hidden.get("id", "")).strip()
+            if hidden.get("action") == "add" and add_id.isdigit():
+                links.add(urljoin(document_url, f"/index.php?/cart/&action=add&id={add_id}"))
 
         return {normalize_url(LinkDiscoverer._strip_language_param(link)) for link in links}
 
@@ -195,6 +239,13 @@ class LinkDiscoverer:
                         if getattr(result, "final_url", None):
                             dead_links.add(result.final_url)
                         continue
+                    fetched_url = normalize_url(
+                        self._strip_language_param(getattr(result, "final_url", "") or source_url),
+                        force_english=False,
+                    )
+                    parsed_hostbill_page = None
+                    if self._is_hostbill_like_url(fetched_url):
+                        parsed_hostbill_page = parse_hostbill_page(result.text, result.final_url)
                     extracted = self._extract_links(result.text, result.final_url)
                     new_links: set[str] = set()
                     for link in extracted:
@@ -207,6 +258,20 @@ class LinkDiscoverer:
                             )
                             continue
                         new_links.add(link)
+                    if parsed_hostbill_page and parsed_hostbill_page.is_product:
+                        product_candidates.add(fetched_url)
+                    else:
+                        page_slug_url = self._hostbill_slug_url(fetched_url)
+                        if page_slug_url:
+                            slug_links = {
+                                slug_url
+                                for slug_url in (
+                                    self._hostbill_slug_url(link) for link in new_links
+                                )
+                                if slug_url
+                            }
+                            if len(slug_links) >= 2:
+                                category_candidates.add(page_slug_url)
                     next_layer.update(new_links - visited)
                     products, categories = self._split_candidates(new_links)
                     product_candidates.update(products)

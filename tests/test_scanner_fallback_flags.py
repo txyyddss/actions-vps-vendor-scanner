@@ -770,3 +770,67 @@ def test_hostbill_pid_scanner_stops_after_invalid_add_id_listing_streak(tmp_path
     assert len(records) == 1
     assert records[0]["pid"] == 0
     assert len(fake.calls) == 9
+
+
+def test_hostbill_pid_scanner_ignores_cdn_cgi_false_product_links_for_stop_logic(tmp_path) -> None:
+    oos_html = """
+    <html><body>
+      <script>
+      var errors = ["Special plan is currently out of stock"];
+      </script>
+      <button type="submit" class="btn disabled" disabled="disabled">Out of stock!</button>
+      <h2>Special Offer Plan</h2>
+    </body></html>
+    """
+    invalid_listing_html = """
+    <html><body>
+      <h2>Browse Products and Services</h2>
+      <a href="/cdn-cgi/content?id=12345">Cloudflare challenge</a>
+    </body></html>
+    """
+
+    class HostBillPidCdnClient:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, bool]] = []
+
+        def get(self, url: str, force_english: bool = True):  # noqa: ANN001
+            self.calls.append((url, force_english))
+            pid = int(url.rsplit("=", 1)[-1])
+            html = oos_html if pid == 0 else invalid_listing_html
+            return SimpleNamespace(
+                ok=True,
+                requested_url=url,
+                final_url=url,
+                status_code=200,
+                text=html,
+                headers={},
+                tier="direct",
+                elapsed_ms=10,
+                error=None,
+            )
+
+    fake = HostBillPidCdnClient()
+    state_store = StateStore(tmp_path / "state.json")
+    config = {
+        "scanner": {
+            "max_workers": 1,
+            "scan_batch_size": 1,
+            "initial_scan_floor": 0,
+            "stop_tail_window": 20,
+            "stop_inactive_streak_product": 8,
+            "default_scan_bounds": {
+                "whmcs_gid_max": 0,
+                "whmcs_pid_max": 0,
+                "hostbill_catid_max": 0,
+                "hostbill_pid_max": 50,
+            },
+        }
+    }
+    site = _site("HostBillStopCdn", "https://example.com/")
+    site["scan_bounds"]["hostbill_pid_max"] = 50
+
+    records = scan_hostbill_pids(site, config, fake, state_store)
+
+    assert len(records) == 1
+    assert records[0]["pid"] == 0
+    assert len(fake.calls) == 9
