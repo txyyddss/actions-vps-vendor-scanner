@@ -57,7 +57,7 @@
         "scan_bounds": {}
       },
       {
-        "enabled": true,
+        "enabled": false,
         "name": "GreenCloud",
         "url": "https://greencloudvps.com/",
         "discoverer": true,
