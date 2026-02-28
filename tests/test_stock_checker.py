@@ -69,6 +69,17 @@ def test_destock_detection() -> None:
     assert merged[0]["restocked"] is False
 
 
+def test_merge_with_previous_normalizes_mixed_stock_formats() -> None:
+    current = [{"canonical_url": "https://x/a", "in_stock": "1"}]
+    previous = [{"canonical_url": "https://x/a", "stock_status": "out_of_stock"}]
+
+    merged = merge_with_previous(current, previous)
+
+    assert merged[0]["previous_in_stock"] == 0
+    assert merged[0]["restocked"] is True
+    assert merged[0]["changed"] is True
+
+
 def test_sync_stock_snapshot_checks_only_unknown_products_and_excludes_categories(
     monkeypatch,
 ) -> None:
@@ -239,6 +250,14 @@ def test_sync_stock_snapshot_skips_live_check_when_no_unknown_products(monkeypat
     assert result.snapshot_items[0]["canonical_url"] == "https://x/known"
     assert result.snapshot_items[0]["checked_at"] == "prev-known"
     assert result.changed_items == []
+
+
+def test_check_stock_empty_list_skips_executor_even_with_invalid_worker_count() -> None:
+    class NeverCalledHttpClient:
+        def get(self, url: str, force_english: bool = True):  # noqa: ARG002
+            raise AssertionError("http client should not be called for empty input")
+
+    assert check_stock([], NeverCalledHttpClient(), max_workers=0) == []
 
 
 def test_sync_stock_snapshot_checks_all_products_when_full_sweep_requested(monkeypatch) -> None:

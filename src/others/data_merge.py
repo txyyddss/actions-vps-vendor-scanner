@@ -7,43 +7,31 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
 
-from src.misc.config_loader import dump_json, load_config, load_json
+from src.misc.config_loader import dump_json, load_cached_config_section, load_json
 from src.misc.logger import get_logger
+from src.misc.stock_state import count_stock_states, stock_value_from_record
 from src.misc.url_normalizer import canonicalize_for_merge, classify_url
 
-try:
-    _GLOBAL_CONFIG = load_config("config/config.json")
-except Exception:  # noqa: BLE001
-    _GLOBAL_CONFIG = {}
-SCAN_TYPE_PRIORITY = _GLOBAL_CONFIG.get("data_merge", {}).get(
-    "source_priority",
-    {
-        "discoverer": 1,
-        "category_scanner": 2,
-        "product_scanner": 3,
-    },
-)
+DEFAULT_SCAN_TYPE_PRIORITY = {
+    "discoverer": 1,
+    "category_scanner": 2,
+    "product_scanner": 3,
+}
 
 
 def _scan_weight(scan_type: str) -> int:
     """Return numeric priority for a scan type (higher = more authoritative)."""
-    return SCAN_TYPE_PRIORITY.get(scan_type, 0)
+    configured = load_cached_config_section("data_merge").get("source_priority")
+    if isinstance(configured, dict):
+        priority_map = {str(key): int(value) for key, value in configured.items()}
+    else:
+        priority_map = DEFAULT_SCAN_TYPE_PRIORITY
+    return priority_map.get(scan_type, 0)
 
 
 def _coerce_in_stock(record: dict[str, Any]) -> int:
     """Convert any stock representation to integer: 1=in_stock, 0=oos, -1=unknown."""
-    # New-style integer field
-    if "in_stock" in record:
-        val = record["in_stock"]
-        if isinstance(val, int) and val in {-1, 0, 1}:
-            return val
-    # Legacy string field
-    legacy = str(record.get("stock_status", "")).strip().lower()
-    if legacy == "in_stock":
-        return 1
-    if legacy == "out_of_stock":
-        return 0
-    return -1
+    return stock_value_from_record(record)
 
 
 def _sanitize_record(record: dict[str, Any]) -> dict[str, Any] | None:
@@ -206,7 +194,7 @@ def diff_products(
 
     changed_stock: list[str] = []
     for url in sorted(old_urls & new_urls):
-        if old_map[url].get("in_stock") != new_map[url].get("in_stock"):
+        if stock_value_from_record(old_map[url]) != stock_value_from_record(new_map[url]):
             changed_stock.append(url)
     return added, deleted, changed_stock
 
@@ -259,8 +247,7 @@ def write_products(
     products: list[dict[str, Any]], run_id: str, path: str = "data/products.json"
 ) -> None:
     """Write product list to site-grouped JSON with computed stats."""
-    in_stock_count = sum(1 for item in products if item.get("in_stock") == 1)
-    oos_count = sum(1 for item in products if item.get("in_stock") == 0)
+    counts = count_stock_states(products)
     sites = _group_by_site(products)
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -268,9 +255,7 @@ def write_products(
         "stats": {
             "total_sites": len(sites),
             "total_products": len(products),
-            "in_stock": in_stock_count,
-            "out_of_stock": oos_count,
-            "unknown": len(products) - in_stock_count - oos_count,
+            **counts,
         },
         "sites": sites,
     }

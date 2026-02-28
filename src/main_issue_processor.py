@@ -14,7 +14,13 @@ import httpx
 
 from src.hidden_scanner.hostbill.pid_scanner import scan_hostbill_pids
 from src.hidden_scanner.whmcs.pid_scanner import scan_whmcs_pids
-from src.misc.config_loader import dump_json, load_config, load_json, normalize_site_entry
+from src.misc.config_loader import (
+    dump_json,
+    load_cached_config_section,
+    load_config,
+    load_json,
+    normalize_site_entry,
+)
 from src.misc.http_client import HttpClient
 from src.misc.logger import get_logger, setup_logging
 from src.misc.telegram_sender import TelegramSender
@@ -22,14 +28,17 @@ from src.others.state_store import StateStore
 from src.site_specific.acck_api import scan_acck_api
 from src.site_specific.akile_api import scan_akile_api
 
-_GLOBAL_CONFIG = load_config("config/config.json")
-TELEGRAM_CHANNEL_URL = _GLOBAL_CONFIG.get("telegram", {}).get(
-    "channel_url", "https://t.me/tx_stock_monitor"
-)
 FEATURE_REQUEST_GUIDANCE = (
     "SPECIAL/custom sites are not accepted in Site Change. Please open a Feature Request instead."
 )
 DELETE_REQUEST_GUIDANCE = "Site Change no longer supports delete requests."
+
+
+def _telegram_channel_url() -> str:
+    """Read the configured Telegram channel URL at runtime."""
+    return str(
+        load_cached_config_section("telegram").get("channel_url", "https://t.me/tx_stock_monitor")
+    )
 
 
 def _parse_markdown_form(body: str) -> dict[str, str]:
@@ -307,7 +316,7 @@ def main() -> None:
                 issue_number=issue_number,
                 message=(
                     f"Issue form is invalid:\n\n- {reason}\n\n"
-                    f"Closing as not planned.\n\nTelegram channel: {TELEGRAM_CHANNEL_URL}"
+                    f"Closing as not planned.\n\nTelegram channel: {_telegram_channel_url()}"
                 ),
                 close_invalid=True,
             )
@@ -330,7 +339,7 @@ def main() -> None:
                     f"- Scanned Product Number: {scanned_count}\n"
                     f"- Validation Method: {method}\n\n"
                     "The site was **not** added/updated. Please verify URL/platform/expectation and submit again.\n\n"
-                    f"Telegram channel: {TELEGRAM_CHANNEL_URL}"
+                    f"Telegram channel: {_telegram_channel_url()}"
                 )
                 _comment_and_maybe_close(
                     issue_number=issue_number, message=rejection, close_invalid=False
@@ -353,7 +362,7 @@ def main() -> None:
                 issue_number=issue_number,
                 message=(
                     f"Unable to process request:\n\n- {message}\n\n"
-                    f"Closing as not planned.\n\nTelegram channel: {TELEGRAM_CHANNEL_URL}"
+                    f"Closing as not planned.\n\nTelegram channel: {_telegram_channel_url()}"
                 ),
                 close_invalid=True,
             )
@@ -366,7 +375,7 @@ def main() -> None:
             issue_number=issue_number,
             message=(
                 f"Processed automatically:\n\n- {message}\n\n"
-                f"Please verify the next scanner run.\n\nTelegram channel: {TELEGRAM_CHANNEL_URL}"
+                f"Please verify the next scanner run.\n\nTelegram channel: {_telegram_channel_url()}"
             ),
             close_invalid=False,
         )

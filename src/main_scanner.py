@@ -15,10 +15,11 @@ from src.hidden_scanner.hostbill.catid_scanner import scan_hostbill_catids
 from src.hidden_scanner.hostbill.pid_scanner import scan_hostbill_pids
 from src.hidden_scanner.whmcs.gid_scanner import scan_whmcs_gids
 from src.hidden_scanner.whmcs.pid_scanner import scan_whmcs_pids
-from src.misc.config_loader import load_config, load_sites
+from src.misc.config_loader import coerce_positive_int, load_config, load_sites
 from src.misc.dashboard_generator import generate_dashboard
 from src.misc.http_client import HttpClient
 from src.misc.logger import get_logger, setup_logging
+from src.misc.stock_state import count_stock_states
 from src.misc.telegram_sender import TelegramSender
 from src.others.data_merge import diff_products, load_products, merge_records, write_products
 from src.others.state_store import StateStore
@@ -50,14 +51,25 @@ def _save_tmp(name: str, payload: list[dict[str, Any]]) -> None:
     )
 
 
+def _scanner_worker_count(
+    scanner_cfg: dict[str, Any],
+    key: str = "max_workers",
+    default: int = 12,
+    maximum: int | None = None,
+) -> int:
+    """Read a worker-count setting without letting bad config break executors."""
+    return coerce_positive_int(scanner_cfg.get(key, default), default=default, maximum=maximum)
+
+
 def _discover_mode(
     sites: list[dict[str, Any]], config: dict[str, Any], http_client: HttpClient
 ) -> list[dict[str, Any]]:
     """Executes _discover_mode logic."""
     scanner_cfg = config.get("scanner", {})
     logger = get_logger("main_scanner")
-    discover_site_workers = max(
-        1, int(scanner_cfg.get("discoverer_max_workers", scanner_cfg.get("max_workers", 12)))
+    discover_site_workers = coerce_positive_int(
+        scanner_cfg.get("discoverer_max_workers", scanner_cfg.get("max_workers", 12)),
+        default=12,
     )
     site_discoverer = LinkDiscoverer(
         http_client=http_client,
@@ -131,7 +143,7 @@ def _category_mode(
     targets = [site for site in sites if site.get("enabled") and site.get("category_scanner")]
     rows: list[dict[str, Any]] = []
 
-    with ThreadPoolExecutor(max_workers=min(8, int(scanner_cfg.get("max_workers", 12)))) as pool:
+    with ThreadPoolExecutor(max_workers=_scanner_worker_count(scanner_cfg, maximum=8)) as pool:
         future_map = {}
         for site in targets:
             category = str(site.get("category", "")).lower()
@@ -167,7 +179,7 @@ def _product_mode(
     targets = [site for site in sites if site.get("enabled")]
     rows: list[dict[str, Any]] = []
 
-    with ThreadPoolExecutor(max_workers=min(8, int(scanner_cfg.get("max_workers", 12)))) as pool:
+    with ThreadPoolExecutor(max_workers=_scanner_worker_count(scanner_cfg, maximum=8)) as pool:
         future_map = {}
         for site in targets:
             special_crawler = str(site.get("special_crawler", "")).strip().lower()
@@ -224,7 +236,7 @@ def _merge_mode(config: dict[str, Any], http_client: HttpClient) -> list[dict[st
         products=merged,
         previous_items=load_stock("data/stock.json"),
         http_client=http_client,
-        max_workers=int(config.get("scanner", {}).get("max_workers", 12)),
+        max_workers=_scanner_worker_count(config.get("scanner", {})),
         only_unknown=True,
     )
     merged = stock_sync.products
@@ -242,6 +254,7 @@ def _merge_mode(config: dict[str, Any], http_client: HttpClient) -> list[dict[st
         )
     if stock_sync.changed_items:
         tg.send_stock_change_alerts(stock_sync.changed_items)
+    snapshot_counts = count_stock_states(stock_sync.snapshot_items)
     tg.send_run_stats(
         title="Scanner Run Summary",
         stats={
@@ -251,9 +264,7 @@ def _merge_mode(config: dict[str, Any], http_client: HttpClient) -> list[dict[st
             "deleted_products": len(deleted),
             "stock_changed": len(changed_stock),
             "checked_products": len(stock_sync.checked_items),
-            "unknown_remaining": sum(
-                1 for item in stock_sync.snapshot_items if item.get("in_stock") == -1
-            ),
+            "unknown_remaining": snapshot_counts["unknown"],
         },
     )
 
@@ -268,14 +279,13 @@ def _merge_mode(config: dict[str, Any], http_client: HttpClient) -> list[dict[st
     from src.others.data_merge import _group_by_site
 
     sites = _group_by_site(merged)
+    merged_counts = count_stock_states(merged)
     products_payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "stats": {
             "total_sites": len(sites),
             "total_products": len(merged),
-            "in_stock": sum(1 for item in merged if item.get("in_stock") == 1),
-            "out_of_stock": sum(1 for item in merged if item.get("in_stock") == 0),
-            "unknown": sum(1 for item in merged if item.get("in_stock") == -1),
+            **merged_counts,
         },
         "sites": sites,
     }

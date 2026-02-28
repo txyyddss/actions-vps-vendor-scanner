@@ -2,26 +2,16 @@
 
 from __future__ import annotations
 
-import json
 import re
-from pathlib import Path
 from urllib.parse import parse_qsl, urlparse
 
 from bs4 import BeautifulSoup
 
+from src.misc.config_loader import config_string_tuple
 from src.parsers.common import ParsedItem, bs4_text, extract_prices
 
-_parser_cfg = {}
-try:
-    with Path("config/config.json").open("r", encoding="utf-8-sig") as _f:
-        _parser_cfg = json.load(_f).get("parsers", {})
-except Exception:
-    pass
-
 OOS_MARKERS = tuple(
-    _parser_cfg.get(
-        "oos_markers",
-        (
+    (
             "out of stock",
             "sold out",
             "currently unavailable",
@@ -30,7 +20,6 @@ OOS_MARKERS = tuple(
             "缺货中",
             "無庫存",
             "无库存",
-        ),
     )
 )
 
@@ -47,6 +36,11 @@ GENERIC_HEADINGS = {
 
 
 _text = bs4_text
+
+
+def _oos_markers() -> tuple[str, ...]:
+    """Return the configured WHMCS out-of-stock markers."""
+    return config_string_tuple("parsers", "oos_markers", OOS_MARKERS)
 
 
 def _unique_nodes(soup: BeautifulSoup, selectors: list[str]) -> list:
@@ -82,7 +76,7 @@ def _texts_from_nodes(nodes: list) -> list[str]:
 def _has_oos_marker(texts: list[str]) -> bool:
     """Return whether any candidate text contains a configured OOS marker."""
     lowered_texts = [text.lower() for text in texts if text]
-    return any(marker in text for marker in OOS_MARKERS for text in lowered_texts)
+    return any(marker in text for marker in _oos_markers() for text in lowered_texts)
 
 
 def _pick_product_title(soup: BeautifulSoup) -> str:
@@ -261,7 +255,7 @@ def _store_segments_from_url(url: str) -> list[str]:
 
 
 def parse_whmcs_page(html: str, final_url: str) -> ParsedItem:
-    """Executes parse_whmcs_page logic."""
+    """Parse a WHMCS page into a normalized product/category result."""
     soup = BeautifulSoup(html, "lxml")
     full_text = soup.get_text(" ", strip=True)
     route = classify_whmcs_route(final_url)

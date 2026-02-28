@@ -207,3 +207,175 @@ def test_http_client_accepts_flaresolverr_no_challenge_content(monkeypatch) -> N
     assert result.ok is True
     assert result.tier == "flaresolverr"
     assert result.text == "<html>ok</html>"
+
+
+def test_http_client_non_challenge_404_is_failure_and_preserves_status(monkeypatch) -> None:
+    client = _build_client()
+    client.flaresolverr_enabled = False
+
+    monkeypatch.setattr(
+        client,
+        "_direct_get",
+        lambda url, proxy_url=None, cookie_header=None: FetchResult(
+            ok=True,
+            requested_url=url,
+            final_url="https://example.com/final-missing",
+            status_code=404,
+            text="<html>missing</html>",
+            headers={},
+            tier="direct",
+            elapsed_ms=10,
+        ),
+    )
+
+    result = client.get("https://example.com/missing")
+
+    assert result.ok is False
+    assert result.status_code == 404
+    assert result.final_url == "https://example.com/final-missing"
+    assert result.tier == "direct"
+
+
+def test_http_client_non_challenge_403_requires_real_fallback_success(monkeypatch) -> None:
+    client = _build_client()
+    client.flaresolverr_enabled = False
+
+    monkeypatch.setattr(
+        client,
+        "_direct_get",
+        lambda url, proxy_url=None, cookie_header=None: FetchResult(
+            ok=True,
+            requested_url=url,
+            final_url=url,
+            status_code=403,
+            text="<html>forbidden</html>",
+            headers={"server": "nginx"},
+            tier="direct",
+            elapsed_ms=10,
+        ),
+    )
+
+    result = client.get("https://example.com/forbidden")
+
+    assert result.ok is False
+    assert result.status_code == 403
+    assert result.tier == "direct"
+
+
+def test_http_client_non_challenge_403_can_still_succeed_via_fallback(monkeypatch) -> None:
+    client = _build_client()
+
+    monkeypatch.setattr(
+        client,
+        "_direct_get",
+        lambda url, proxy_url=None, cookie_header=None: FetchResult(
+            ok=True,
+            requested_url=url,
+            final_url=url,
+            status_code=403,
+            text="<html>forbidden</html>",
+            headers={"server": "nginx"},
+            tier="direct",
+            elapsed_ms=10,
+        ),
+    )
+    monkeypatch.setattr(
+        client.flaresolverr,
+        "get",
+        lambda url, domain, proxy_url=None: FlareSolverrResult(  # noqa: ARG005
+            ok=True,
+            status_code=200,
+            final_url=url,
+            body="<html>ok</html>",
+            cookies=[],
+            message="ok",
+        ),
+    )
+
+    result = client.get("https://example.com/forbidden")
+
+    assert result.ok is True
+    assert result.tier == "flaresolverr"
+
+
+def test_http_client_rejects_non_success_flaresolverr_response(monkeypatch) -> None:
+    client = _build_client()
+    fs_text = "<html><title>Just a moment...</title></html>"
+
+    monkeypatch.setattr(
+        client,
+        "_direct_get",
+        lambda url, proxy_url=None, cookie_header=None: FetchResult(
+            ok=True,
+            requested_url=url,
+            final_url=url,
+            status_code=503,
+            text=fs_text,
+            headers={"server": "cloudflare"},
+            tier="direct",
+            elapsed_ms=10,
+        ),
+    )
+    monkeypatch.setattr(
+        client.flaresolverr,
+        "get",
+        lambda url, domain, proxy_url=None: FlareSolverrResult(  # noqa: ARG005
+            ok=True,
+            status_code=503,
+            final_url=url,
+            body=fs_text,
+            cookies=[],
+            message="Challenge solved!",
+        ),
+    )
+
+    result = client.get("https://example.com/store")
+
+    assert result.ok is False
+    assert result.tier == "flaresolverr"
+    assert result.status_code == 503
+
+
+def test_http_client_does_not_trust_direct_challenge_when_flaresolverr_reports_no_challenge(
+    monkeypatch,
+) -> None:
+    client = _build_client()
+    direct_text = (
+        "<html><noscript><h1>"
+        "To work with the site requires support for JavaScript and Cookies."
+        "</h1></noscript><body>ok</body></html>"
+    )
+
+    monkeypatch.setattr(
+        client,
+        "_direct_get",
+        lambda url, proxy_url=None, cookie_header=None: FetchResult(
+            ok=True,
+            requested_url=url,
+            final_url=url,
+            status_code=503,
+            text=direct_text,
+            headers={"server": "cloudflare", "cf-ray": "abc123"},
+            tier="direct",
+            elapsed_ms=10,
+        ),
+    )
+    monkeypatch.setattr(
+        client.flaresolverr,
+        "get",
+        lambda url, domain, proxy_url=None: FlareSolverrResult(  # noqa: ARG005
+            ok=False,
+            status_code=None,
+            final_url=url,
+            body="",
+            cookies=[],
+            message="Challenge not detected!",
+            error="Challenge not detected!",
+        ),
+    )
+
+    result = client.get("https://example.com/store")
+
+    assert result.ok is False
+    assert result.tier == "direct"
+    assert result.status_code == 503

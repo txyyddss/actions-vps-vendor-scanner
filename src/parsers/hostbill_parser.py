@@ -2,35 +2,21 @@
 
 from __future__ import annotations
 
-import json
 import re
-from pathlib import Path
 from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
 
+from src.misc.config_loader import config_string_tuple
 from src.parsers.common import ParsedItem, bs4_text, extract_prices
 
-_parser_cfg = {}
-try:
-    with Path("config/config.json").open("r", encoding="utf-8-sig") as _f:
-        _parser_cfg = json.load(_f).get("parsers", {})
-except Exception:
-    pass
-
-OOS_MARKERS = tuple(
-    _parser_cfg.get(
-        "oos_markers",
-        (
-            "out of stock",
-            "currently unavailable",
-            "unavailable",
-            "no services yet",
-        ),
-    )
+DEFAULT_OOS_MARKERS = (
+    "out of stock",
+    "currently unavailable",
+    "unavailable",
+    "no services yet",
 )
 NO_SERVICES_MARKER = "no services yet"
-ACTIVE_OOS_MARKERS = tuple(marker for marker in OOS_MARKERS if marker.lower() != NO_SERVICES_MARKER)
 
 NON_PRODUCT_REDIRECT_MARKERS = ("/checkdomain/",)
 
@@ -39,6 +25,16 @@ _text = bs4_text
 
 
 _extract_prices = extract_prices
+
+
+def _oos_markers() -> tuple[str, ...]:
+    """Return the configured HostBill out-of-stock markers."""
+    return config_string_tuple("parsers", "oos_markers", DEFAULT_OOS_MARKERS)
+
+
+def _active_oos_markers() -> tuple[str, ...]:
+    """Exclude category-only placeholders from product stock detection."""
+    return tuple(marker for marker in _oos_markers() if marker != NO_SERVICES_MARKER)
 
 
 def _extract_cycles(text: str) -> list[str]:
@@ -138,12 +134,13 @@ def _hostbill_cart_segments_from_url(final_url: str) -> list[str]:
 
 
 def parse_hostbill_page(html: str, final_url: str) -> ParsedItem:
-    """Executes parse_hostbill_page logic."""
+    """Parse a HostBill page into a normalized product/category result."""
     soup = _strip_noscript(BeautifulSoup(html, "lxml"))
     cleaned_html = str(soup)
     full_text = soup.get_text(" ", strip=True)
     lowered = full_text.lower()
     final_lower = final_url.lower()
+    active_oos_markers = _active_oos_markers()
 
     # Product validity signals for HostBill are multi-source and theme dependent.
     is_non_product_redirect = any(marker in final_lower for marker in NON_PRODUCT_REDIRECT_MARKERS)
@@ -152,10 +149,10 @@ def parse_hostbill_page(html: str, final_url: str) -> ParsedItem:
     prices = _extract_prices(full_text)
     has_order_step = "step=3" in final_lower
     has_add_id = "action=add&id=" in final_lower
-    has_oos_marker = any(marker in lowered for marker in ACTIVE_OOS_MARKERS)
+    has_oos_marker = any(marker in lowered for marker in active_oos_markers)
     lowered_html = cleaned_html.lower()
     has_js_errors = "var errors" in lowered_html and any(
-        marker in lowered_html for marker in ACTIVE_OOS_MARKERS
+        marker in lowered_html for marker in active_oos_markers
     )
     disabled_oos_button = soup.select_one("button[disabled]")
     has_disabled_oos_button = bool(
@@ -170,8 +167,8 @@ def parse_hostbill_page(html: str, final_url: str) -> ParsedItem:
     )
     has_product_signals = has_order_step or has_confirmed_add_id
     has_category_signals = bool(category_links_list) or bool(product_links)
-    has_content_signals = has_order_step or has_category_signals or bool(prices)
-    has_blocking_no_services = NO_SERVICES_MARKER in lowered and not has_content_signals
+    has_non_navigation_content = has_order_step or bool(product_links) or bool(prices)
+    has_blocking_no_services = NO_SERVICES_MARKER in lowered and not has_non_navigation_content
     is_product = (
         has_product_signals and not has_blocking_no_services and not is_non_product_redirect
     )

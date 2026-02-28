@@ -2,89 +2,64 @@
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass
-from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
-_url_cfg = {}
-try:
-    with Path("config/config.json").open("r", encoding="utf-8-sig") as _f:
-        _url_cfg = json.load(_f).get("url_normalizer", {})
-except Exception:
-    pass
+from src.misc.config_loader import config_string_set, config_string_tuple
 
-INVALID_PATH_PATTERNS = tuple(
-    _url_cfg.get(
-        "invalid_path_patterns",
-        (
-            "contact",
-            "contact.php",
-            "announcements",
-            "announcement",
-            "knowledgebase",
-            "submitticket",
-            "supporttickets",
-            "supporttickets.php",
-            "clientarea",
-            "login",
-            "password",
-            "pwreset",
-            "forgot",
-            "register",
-            "affiliates",
-        ),
-    )
+DEFAULT_INVALID_PATH_PATTERNS = (
+    "contact",
+    "contact.php",
+    "announcements",
+    "announcement",
+    "knowledgebase",
+    "submitticket",
+    "supporttickets",
+    "supporttickets.php",
+    "clientarea",
+    "login",
+    "password",
+    "pwreset",
+    "forgot",
+    "register",
+    "affiliates",
 )
 
-INVALID_EXTENSIONS = set(
-    _url_cfg.get(
-        "invalid_extensions",
-        [
-            ".png",
-            ".jpg",
-            ".jpeg",
-            ".gif",
-            ".webp",
-            ".svg",
-            ".ico",
-            ".css",
-            ".js",
-            ".woff",
-            ".woff2",
-            ".ttf",
-            ".eot",
-            ".pdf",
-            ".zip",
-            ".tar",
-            ".gz",
-        ],
-    )
-)
+DEFAULT_INVALID_EXTENSIONS = {
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".webp",
+    ".svg",
+    ".ico",
+    ".css",
+    ".js",
+    ".woff",
+    ".woff2",
+    ".ttf",
+    ".eot",
+    ".pdf",
+    ".zip",
+    ".tar",
+    ".gz",
+}
 
-VOLATILE_QUERY_KEYS = set(
-    _url_cfg.get(
-        "volatile_query_keys",
-        [
-            "sid",
-            "session",
-            "phpsessid",
-            "utm_source",
-            "utm_medium",
-            "utm_campaign",
-            "utm_term",
-            "utm_content",
-        ],
-    )
-)
+DEFAULT_VOLATILE_QUERY_KEYS = {
+    "sid",
+    "session",
+    "phpsessid",
+    "utm_source",
+    "utm_medium",
+    "utm_campaign",
+    "utm_term",
+    "utm_content",
+}
 
-ENGLISH_LANGUAGE_TAGS = set(
-    _url_cfg.get("english_language_tags", ["en", "en-us", "en_us", "en-gb", "en_gb", "english"])
-)
-
-LANGUAGE_QUERY_KEYS = set(_url_cfg.get("language_query_keys", ["language", "lang", "locale"]))
-ROUTE_QUERY_KEYS = set(_url_cfg.get("route_query_keys", ["rp"]))
+DEFAULT_ENGLISH_LANGUAGE_TAGS = {"en", "en-us", "en_us", "en-gb", "en_gb", "english"}
+DEFAULT_LANGUAGE_QUERY_KEYS = {"language", "lang", "locale"}
+DEFAULT_ROUTE_QUERY_KEYS = {"rp"}
 
 
 @dataclass(slots=True)
@@ -94,8 +69,6 @@ class UrlClassification:
     url: str
     is_invalid_product_url: bool
     reason: str
-
-
 def _normalize_query_key(key: str) -> str:
     """Executes _normalize_query_key logic."""
     normalized = key.strip().lower().lstrip("&")
@@ -108,18 +81,24 @@ def _normalized_query_pairs(
     raw_pairs: list[tuple[str, str]], force_english: bool
 ) -> list[tuple[str, str]]:
     """Normalize and sort query pairs while preserving semantic keys."""
+    volatile_query_keys = config_string_set(
+        "url_normalizer", "volatile_query_keys", DEFAULT_VOLATILE_QUERY_KEYS
+    )
+    language_query_keys = config_string_set(
+        "url_normalizer", "language_query_keys", DEFAULT_LANGUAGE_QUERY_KEYS
+    )
     query_pairs: list[tuple[str, str]] = []
     for key, value in raw_pairs:
         normalized_key = _normalize_query_key(key)
         if not normalized_key:
             continue
-        if normalized_key in VOLATILE_QUERY_KEYS:
+        if normalized_key in volatile_query_keys:
             continue
         query_pairs.append((normalized_key, value))
 
     if force_english:
         # Always force a deterministic English hint and replace any existing language value.
-        query_pairs = [(k, v) for k, v in query_pairs if k not in LANGUAGE_QUERY_KEYS]
+        query_pairs = [(k, v) for k, v in query_pairs if k not in language_query_keys]
         query_pairs.append(("language", "english"))
 
     return sorted(query_pairs, key=lambda item: item[0].lower())
@@ -183,17 +162,20 @@ def is_same_domain(url: str, base_url: str) -> bool:
 
 
 def classify_url(url: str) -> UrlClassification:
-    """Executes classify_url logic."""
+    """Classify a URL as product-like or invalid for downstream processing."""
     normalized = normalize_url(url)
     lowered = normalized.lower()
     parsed = urlparse(lowered)
+    invalid_path_patterns = config_string_tuple(
+        "url_normalizer", "invalid_path_patterns", DEFAULT_INVALID_PATH_PATTERNS
+    )
 
     if not parsed.scheme.startswith("http"):
         return UrlClassification(
             url=normalized, is_invalid_product_url=True, reason="non-http-scheme"
         )
 
-    for pattern in INVALID_PATH_PATTERNS:
+    for pattern in invalid_path_patterns:
         if pattern in parsed.path:
             return UrlClassification(
                 url=normalized, is_invalid_product_url=True, reason=f"denylist:{pattern}"
@@ -210,7 +192,7 @@ def classify_url(url: str) -> UrlClassification:
     for key, value in parse_qsl(parsed.query, keep_blank_values=True):
         if key.lower() == "rp":
             route_lower = value.strip().lower()
-            for pattern in INVALID_PATH_PATTERNS:
+            for pattern in invalid_path_patterns:
                 if pattern in route_lower:
                     return UrlClassification(
                         url=normalized,
@@ -239,15 +221,30 @@ def should_skip_discovery_url(url: str) -> tuple[bool, str]:
     normalized = normalize_url(url, force_english=False)
     lowered = normalized.lower()
     parsed = urlparse(lowered)
+    invalid_path_patterns = config_string_tuple(
+        "url_normalizer", "invalid_path_patterns", DEFAULT_INVALID_PATH_PATTERNS
+    )
+    invalid_extensions = config_string_set(
+        "url_normalizer", "invalid_extensions", DEFAULT_INVALID_EXTENSIONS
+    )
+    language_query_keys = config_string_set(
+        "url_normalizer", "language_query_keys", DEFAULT_LANGUAGE_QUERY_KEYS
+    )
+    english_language_tags = config_string_set(
+        "url_normalizer", "english_language_tags", DEFAULT_ENGLISH_LANGUAGE_TAGS
+    )
+    route_query_keys = config_string_set(
+        "url_normalizer", "route_query_keys", DEFAULT_ROUTE_QUERY_KEYS
+    )
 
     if not parsed.scheme.startswith("http"):
         return True, "non-http-scheme"
 
-    for pattern in INVALID_PATH_PATTERNS:
+    for pattern in invalid_path_patterns:
         if pattern in parsed.path:
             return True, f"blocked-path:{pattern}"
 
-    if parsed.path.endswith(tuple(INVALID_EXTENSIONS)):
+    if parsed.path.endswith(tuple(invalid_extensions)):
         return True, "media-or-static-file"
 
     query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
@@ -256,18 +253,18 @@ def should_skip_discovery_url(url: str) -> tuple[bool, str]:
         if key_lower == "currency":
             return True, "blocked-query:currency"
 
-        if key_lower in LANGUAGE_QUERY_KEYS:
+        if key_lower in language_query_keys:
             language_tag = value.strip().lower()
-            if language_tag and language_tag not in ENGLISH_LANGUAGE_TAGS:
+            if language_tag and language_tag not in english_language_tags:
                 return True, f"non-english-language:{language_tag}"
             continue
 
         # WHMCS often uses `rp=/route/...` query routes that hide actual page type.
-        if key_lower in ROUTE_QUERY_KEYS:
+        if key_lower in route_query_keys:
             route_lower = re.sub(r"/{2,}", "/", value.strip().lower())
             if route_lower and not route_lower.startswith("/"):
                 route_lower = f"/{route_lower}"
-            for pattern in INVALID_PATH_PATTERNS:
+            for pattern in invalid_path_patterns:
                 if pattern in route_lower:
                     return True, f"blocked-route:{pattern}"
 

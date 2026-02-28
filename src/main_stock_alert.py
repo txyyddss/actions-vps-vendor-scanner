@@ -5,9 +5,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from src.misc.config_loader import load_config
+from src.misc.config_loader import coerce_positive_int, load_config
 from src.misc.http_client import HttpClient
 from src.misc.logger import setup_logging
+from src.misc.stock_state import count_stock_states
 from src.misc.telegram_sender import TelegramSender
 from src.others.data_merge import load_products
 from src.others.stock_checker import load_stock, sync_stock_snapshot, write_stock
@@ -53,7 +54,7 @@ def main() -> None:
         products=products,
         previous_items=load_stock("data/stock.json"),
         http_client=http_client,
-        max_workers=int(config.get("scanner", {}).get("max_workers", 12)),
+        max_workers=coerce_positive_int(config.get("scanner", {}).get("max_workers", 12), 12),
         only_unknown=False,
     )
 
@@ -65,13 +66,9 @@ def main() -> None:
     tg.send_run_stats(
         title="Stock Alert Run Summary",
         stats={
+            **count_stock_states(stock_sync.snapshot_items),
             "total_products": len(stock_sync.snapshot_items),
             "checked_products": len(stock_sync.checked_items),
-            "in_stock": sum(1 for item in stock_sync.snapshot_items if item.get("in_stock") == 1),
-            "out_of_stock": sum(
-                1 for item in stock_sync.snapshot_items if item.get("in_stock") == 0
-            ),
-            "unknown": sum(1 for item in stock_sync.snapshot_items if item.get("in_stock") == -1),
             "restocked": sum(1 for item in stock_sync.snapshot_items if item.get("restocked")),
             "destocked": sum(1 for item in stock_sync.snapshot_items if item.get("destocked")),
             "changed": len(stock_sync.changed_items),

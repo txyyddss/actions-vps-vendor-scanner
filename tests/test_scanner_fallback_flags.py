@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import logging
 from concurrent.futures import ThreadPoolExecutor as RealThreadPoolExecutor
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -36,6 +38,10 @@ class FakeHttpClient:
             elapsed_ms=10,
             error=None,
         )
+
+
+def _fixture(name: str) -> str:
+    return Path(f"tests/fixtures/{name}").read_text(encoding="utf-8")
 
 
 def _scanner_config() -> dict:
@@ -577,6 +583,127 @@ def test_whmcs_pid_scanner_deduplicates_confproduct_content(tmp_path) -> None:
     assert len(records) == 1
     assert records[0]["pid"] == 0
     assert len(fake.calls) == 2
+
+
+def test_hostbill_catid_scanner_stops_after_navigation_only_no_services_streak(
+    tmp_path, caplog
+) -> None:
+    fallback_html = _fixture("hostbill_category_navigation_only_no_services.html")
+
+    class HostBillCatidFallbackClient:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, bool]] = []
+
+        def get(self, url: str, force_english: bool = True):  # noqa: ANN001
+            self.calls.append((url, force_english))
+            return SimpleNamespace(
+                ok=True,
+                requested_url=url,
+                final_url=url,
+                status_code=200,
+                text=fallback_html,
+                headers={},
+                tier="direct",
+                elapsed_ms=10,
+                error=None,
+            )
+
+    caplog.set_level(logging.INFO, logger="hostbill_catid_scanner")
+    fake = HostBillCatidFallbackClient()
+    state_store = StateStore(tmp_path / "state.json")
+    config = {
+        "scanner": {
+            "max_workers": 1,
+            "scan_batch_size": 1,
+            "initial_scan_floor": 0,
+            "stop_tail_window": 20,
+            "stop_inactive_streak_category": 8,
+            "default_scan_bounds": {
+                "whmcs_gid_max": 0,
+                "whmcs_pid_max": 0,
+                "hostbill_catid_max": 50,
+                "hostbill_pid_max": 0,
+            },
+        }
+    }
+    site = _site("HostBillCatFallback", "https://example.com/")
+    site["scan_bounds"]["hostbill_catid_max"] = 50
+
+    records = scan_hostbill_catids(site, config, fake, state_store)
+
+    assert records == []
+    assert len(fake.calls) == 8
+    assert any(
+        "hostbill catid scan site=HostBillCatFallback" in record.getMessage()
+        and "stop=inactive-streak=8" in record.getMessage()
+        for record in caplog.records
+    )
+
+
+def test_hostbill_catid_scanner_keeps_real_categories_and_logs_category_count(
+    tmp_path, caplog
+) -> None:
+    valid_html = _fixture("hostbill_category_generic_with_products.html")
+    fallback_html = _fixture("hostbill_category_navigation_only_no_services.html")
+
+    class HostBillCatidClient:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, bool]] = []
+
+        def get(self, url: str, force_english: bool = True):  # noqa: ANN001
+            self.calls.append((url, force_english))
+            cat_id = int(url.rsplit("=", 1)[-1])
+            html = valid_html if cat_id == 0 else fallback_html
+            return SimpleNamespace(
+                ok=True,
+                requested_url=url,
+                final_url=url,
+                status_code=200,
+                text=html,
+                headers={},
+                tier="direct",
+                elapsed_ms=10,
+                error=None,
+            )
+
+    caplog.set_level(logging.INFO, logger="hostbill_catid_scanner")
+    fake = HostBillCatidClient()
+    state_store = StateStore(tmp_path / "state.json")
+    config = {
+        "scanner": {
+            "max_workers": 1,
+            "scan_batch_size": 1,
+            "initial_scan_floor": 0,
+            "stop_tail_window": 20,
+            "stop_inactive_streak_category": 20,
+            "default_scan_bounds": {
+                "whmcs_gid_max": 0,
+                "whmcs_pid_max": 0,
+                "hostbill_catid_max": 50,
+                "hostbill_pid_max": 0,
+            },
+        }
+    }
+    site = _site("HostBillCatProgress", "https://example.com/")
+    site["scan_bounds"]["hostbill_catid_max"] = 50
+
+    records = scan_hostbill_catids(site, config, fake, state_store)
+    category_rows = [record for record in records if record["type"] == "category"]
+    product_rows = [record for record in records if record["type"] == "product"]
+
+    assert [record["cat_id"] for record in category_rows] == [0]
+    assert [record["cat_id"] for record in product_rows] == [0, 0]
+    assert len(fake.calls) == 21
+    assert any(
+        "hostbill catid progress site=HostBillCatProgress" in record.getMessage()
+        and "discovered=1 rows=3" in record.getMessage()
+        for record in caplog.records
+    )
+    assert any(
+        "hostbill catid scan site=HostBillCatProgress" in record.getMessage()
+        and "stop=inactive-streak=20" in record.getMessage()
+        for record in caplog.records
+    )
 
 
 def test_hostbill_pid_scanner_stops_after_invalid_add_id_listing_streak(tmp_path) -> None:

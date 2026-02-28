@@ -9,6 +9,7 @@ from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
 from bs4 import BeautifulSoup
 
+from src.misc.config_loader import coerce_positive_int
 from src.misc.http_client import HttpClient
 from src.misc.logger import get_logger
 from src.misc.url_normalizer import is_same_domain, normalize_url, should_skip_discovery_url
@@ -39,7 +40,7 @@ class LinkDiscoverer:
         self.http_client = http_client
         self.max_depth = max_depth
         self.max_pages = max_pages
-        self.max_workers = max_workers
+        self.max_workers = coerce_positive_int(max_workers, default=8)
         self.logger = get_logger("discoverer")
 
     @staticmethod

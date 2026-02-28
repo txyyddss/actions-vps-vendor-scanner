@@ -102,3 +102,8 @@ def test_discoverer_seed_urls_find_catalog_when_root_only_shows_login() -> None:
 
     assert "https://example.com/cart.php" in client.calls
     assert "https://example.com/cart.php?a=add&pid=7" in result.product_candidates
+
+
+def test_discoverer_clamps_invalid_worker_count() -> None:
+    discoverer = LinkDiscoverer(http_client=FakeHttpClient({}), max_workers=0)
+    assert discoverer.max_workers == 1

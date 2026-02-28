@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from src.misc.config_loader import reset_cached_config
 from src.parsers.whmcs_parser import parse_whmcs_page
 
 
@@ -81,3 +82,19 @@ def test_parse_whmcs_rp_store_product_is_product() -> None:
         "https://example.com/index.php?language=english&rp=%2Fstore%2Fcat-a%2Foutage-plan",
     )
     assert parsed.is_product is True
+
+
+def test_parse_whmcs_uses_runtime_oos_markers(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "src.misc.config_loader.load_json",
+        lambda path: {"parsers": {"oos_markers": ["temporarily gone"]}},
+    )
+
+    reset_cached_config()
+    parsed = parse_whmcs_page(
+        '<html><body><div class="message message-danger">Temporarily Gone</div></body></html>',
+        "https://example.com/store/shared/plan-a",
+    )
+    assert parsed.in_stock is False
+    assert "oos-marker" in parsed.evidence
+    reset_cached_config()

@@ -67,12 +67,13 @@ def scan_hostbill_catids(
             batches_processed += 1
             if batches_processed == 1 or batches_processed % 10 == 0:
                 logger.info(
-                    "hostbill catid progress site=%s start=%s scanned_to=%s active_max=%s inactive_streak=%s discovered=%s",
+                    "hostbill catid progress site=%s start=%s scanned_to=%s active_max=%s inactive_streak=%s discovered=%s rows=%s",
                     site_name,
                     resume_start,
                     planner.last_processed_id,
                     planner.current_max,
                     planner.inactive_streak,
+                    len(discovered_ids),
                     len(records),
                 )
 

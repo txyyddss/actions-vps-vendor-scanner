@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from src.misc.config_loader import reset_cached_config
 from src.parsers.hostbill_parser import parse_hostbill_page
 
 
@@ -49,6 +50,26 @@ def test_parse_hostbill_extracts_product_links_from_inline_script() -> None:
     assert parsed.is_category is True
 
 
+def test_parse_hostbill_navigation_only_no_services_category_is_invalid() -> None:
+    html = _fixture("hostbill_category_navigation_only_no_services.html")
+    parsed = parse_hostbill_page(html, "https://clients.example.com/?cmd=cart&cat_id=0")
+    assert parsed.is_category is False
+    assert parsed.is_product is False
+    assert parsed.in_stock is None
+    assert "no-services-yet" in parsed.evidence
+
+
+def test_parse_hostbill_generic_heading_with_products_is_valid_category() -> None:
+    html = _fixture("hostbill_category_generic_with_products.html")
+    parsed = parse_hostbill_page(html, "https://clients.example.com/?cmd=cart&cat_id=10")
+    assert parsed.is_category is True
+    assert parsed.is_product is False
+    assert parsed.in_stock is None
+    assert "product-link-count:2" in parsed.evidence
+    assert "has-pricing" in parsed.evidence
+    assert "no-services-yet" not in parsed.evidence
+
+
 def test_parse_hostbill_category_ignores_secondary_no_services_block() -> None:
     html = _fixture("hostbill_category_with_no_services.html")
     parsed = parse_hostbill_page(
@@ -85,5 +106,23 @@ def test_parse_hostbill_invalid_add_id_listing_is_not_product() -> None:
         html, "https://clients.example.com/index.php?/cart/&action=add&id=3000"
     )
     assert parsed.is_product is False
-    assert parsed.is_category is True
+    assert parsed.is_category is False
     assert parsed.in_stock is None
+    assert "no-services-yet" in parsed.evidence
+
+
+def test_parse_hostbill_uses_runtime_oos_markers(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "src.misc.config_loader.load_json",
+        lambda path: {"parsers": {"oos_markers": ["temporarily gone"]}},
+    )
+
+    reset_cached_config()
+    parsed = parse_hostbill_page(
+        "<html><body><h2>Plan</h2><div>Temporarily Gone</div></body></html>",
+        "https://clients.example.com/index.php?/cart/&action=add&id=94",
+    )
+    assert parsed.is_product is True
+    assert parsed.in_stock is False
+    assert "oos-marker" in parsed.evidence
+    reset_cached_config()

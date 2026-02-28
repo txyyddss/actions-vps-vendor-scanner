@@ -235,3 +235,63 @@ def test_merge_mode_runs_shared_stock_sync_and_writes_outputs(monkeypatch) -> No
     assert dashboard_calls["dashboard_cfg"] == {"title": "Test"}
     assert dashboard_calls["payload"]["stats"]["in_stock"] == 1
     assert dashboard_calls["payload"]["stats"]["unknown"] == 1
+
+
+def test_merge_mode_sanitizes_invalid_worker_count(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class DummyTelegramSender:
+        def __init__(self, cfg) -> None:
+            self.cfg = cfg
+
+        def send_product_changes(
+            self, new_urls, deleted_urls, current_products=None, previous_products=None
+        ):
+            return False
+
+        def send_stock_change_alerts(self, items):
+            return False
+
+        def send_run_stats(self, title, stats):
+            return True
+
+    monkeypatch.setattr(main_scanner, "_load_tmp", lambda name: [])
+    monkeypatch.setattr(main_scanner, "load_products", lambda path: [])
+    monkeypatch.setattr(main_scanner, "merge_records", lambda *args, **kwargs: [])
+    monkeypatch.setattr(main_scanner, "_attach_product_ids", lambda products: products)
+    monkeypatch.setattr(main_scanner, "load_stock", lambda path: [])
+    monkeypatch.setattr(
+        main_scanner,
+        "sync_stock_snapshot",
+        lambda products, previous_items, http_client, max_workers, only_unknown: (
+            captured.update({"max_workers": max_workers})
+            or StockSyncResult(
+                products=[],
+                snapshot_items=[],
+                checked_items=[],
+                changed_items=[],
+            )
+        ),
+    )
+    monkeypatch.setattr(main_scanner, "diff_products", lambda old, new: ([], [], []))
+    monkeypatch.setattr(main_scanner, "TelegramSender", DummyTelegramSender)
+    monkeypatch.setattr(main_scanner, "write_products", lambda products, run_id, path: None)
+    monkeypatch.setattr(
+        main_scanner,
+        "write_stock",
+        lambda items, run_id, checked_count, path: None,
+    )
+    monkeypatch.setattr(
+        main_scanner,
+        "generate_dashboard",
+        lambda payload, output_dir, dashboard_cfg: None,
+    )
+    monkeypatch.setattr(main_scanner, "_now_run_id", lambda: "run-merge")
+
+    result = main_scanner._merge_mode(
+        config={"scanner": {"max_workers": 0}, "telegram": {}, "dashboard": {}},
+        http_client=object(),
+    )
+
+    assert result == []
+    assert captured["max_workers"] == 1

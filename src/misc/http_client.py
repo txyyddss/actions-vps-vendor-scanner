@@ -235,6 +235,11 @@ class HttpClient:
             return True
         return False
 
+    @staticmethod
+    def _is_success_status(status_code: int | None) -> bool:
+        """Return whether a response status is safe to treat as successful content."""
+        return status_code is not None and 200 <= status_code < 400
+
     def _direct_get(
         self, url: str, proxy_url: str | None = None, cookie_header: str | None = None
     ) -> FetchResult:
@@ -320,7 +325,12 @@ class HttpClient:
             )
 
         last_error: str | None = None
+        last_status_code: int | None = None
+        last_final_url = normalized_url
+        last_tier = "failed"
+        last_elapsed_ms = 0
         for attempt in range(1, self.backoff.max_attempts + 1):
+            should_retry = False
             self.rate_limiter.wait_for_slot(normalized_url)
             cached_cookie_header = self._get_cached_cookie_header(domain)
             direct = self._direct_get(
@@ -334,21 +344,27 @@ class HttpClient:
                 direct.elapsed_ms,
             )
 
-            if direct.ok and direct.status_code is not None:
-                challenge_like = self._is_cloudflare_like(
+            direct_challenge_like = False
+            if direct.status_code is not None:
+                last_status_code = direct.status_code
+                last_final_url = direct.final_url or last_final_url
+                last_tier = direct.tier
+                last_elapsed_ms = direct.elapsed_ms
+                direct_challenge_like = self._is_cloudflare_like(
                     direct.status_code, direct.text, direct.headers
                 )
                 if direct.status_code == 429:
                     self.rate_limiter.apply_cooldown(
                         normalized_url, self.ratelimit_cooldown_seconds
                     )
-                elif not challenge_like and direct.status_code < 500:
+                    should_retry = True
+                elif not direct_challenge_like and self._is_success_status(direct.status_code):
                     self.circuit_breaker.record_success(domain)
                     return direct
                 else:
                     reason = (
                         "cloudflare-like-challenge"
-                        if challenge_like
+                        if direct_challenge_like
                         else f"status={direct.status_code}"
                     )
                     self.logger.debug(
@@ -357,10 +373,20 @@ class HttpClient:
                         attempt,
                         reason,
                     )
-                    if challenge_like and cached_cookie_header:
+                    if direct_challenge_like and cached_cookie_header:
                         self._clear_cached_cookies(domain)
+                    if direct_challenge_like or direct.status_code in self.retry_status_codes:
+                        should_retry = True
+            elif direct.error:
+                should_retry = True
 
-            if self.flaresolverr_enabled:
+            should_try_flaresolverr = self.flaresolverr_enabled and (
+                direct.status_code is None
+                or direct_challenge_like
+                or direct.status_code in {403, 429}
+                or direct.status_code in self.retry_status_codes
+            )
+            if should_try_flaresolverr:
                 fs_start = time.perf_counter()
                 fs = self.flaresolverr.get(
                     url=normalized_url, domain=domain, proxy_url=active_proxy
@@ -375,7 +401,13 @@ class HttpClient:
                 )
                 if fs.ok:
                     self._store_cookies(domain, fs.cookies)
-                if fs.ok and not self._is_cloudflare_like(fs.status_code, fs.body, None):
+                if fs.status_code is not None:
+                    last_status_code = fs.status_code
+                    last_final_url = fs.final_url or last_final_url
+                    last_tier = "flaresolverr"
+                    last_elapsed_ms = fs_elapsed
+                fs_challenge_like = self._is_cloudflare_like(fs.status_code, fs.body, None)
+                if fs.ok and self._is_success_status(fs.status_code) and not fs_challenge_like:
                     self.circuit_breaker.record_success(domain)
                     return FetchResult(
                         ok=True,
@@ -387,23 +419,52 @@ class HttpClient:
                         tier="flaresolverr",
                         elapsed_ms=fs_elapsed,
                     )
-                last_error = fs.error or fs.message
+                fs_reason = fs.error
+                if not fs_reason:
+                    if fs_challenge_like:
+                        fs_reason = "cloudflare-like-challenge"
+                    elif fs.status_code is not None and not self._is_success_status(fs.status_code):
+                        fs_reason = f"status={fs.status_code}"
+                    else:
+                        fs_reason = fs.message or "flaresolverr-failed"
+                last_error = fs_reason
+                if (
+                    fs_challenge_like
+                    or fs.status_code in self.retry_status_codes
+                    or (fs.status_code is None and not fs.ok)
+                ):
+                    should_retry = True
+                elif fs.status_code is not None and 400 <= fs.status_code < 500 and fs.status_code != 429:
+                    should_retry = False
                 self.logger.debug(
                     "flaresolverr tier fallback url=%s attempt=%s reason=%s",
                     normalized_url,
                     attempt,
-                    last_error or "cloudflare-like-challenge",
+                    fs_reason,
                 )
 
             # Retry when direct result indicates transient failure.
             if direct.status_code and direct.status_code in self.retry_status_codes:
                 self.rate_limiter.apply_cooldown(normalized_url, self.default_cooldown_seconds)
+            direct_reason = direct.error
+            if not direct_reason and direct.status_code is not None:
+                direct_reason = (
+                    "cloudflare-like-challenge"
+                    if direct_challenge_like
+                    else f"status={direct.status_code}"
+                )
+            last_error = last_error or direct_reason or "fetch-failed"
+            if not should_retry:
+                break
+
             if attempt < self.backoff.max_attempts:
                 delay = self.backoff.delay_for_attempt(attempt)
                 time.sleep(delay)
-            last_error = last_error or direct.error or f"status={direct.status_code}"
 
-        self.circuit_breaker.record_failure(domain)
+        if last_status_code is not None and 400 <= last_status_code < 500 and last_status_code != 429:
+            self.circuit_breaker.record_success(domain)
+        else:
+            self.circuit_breaker.record_failure(domain)
         if last_error and "500 Internal" in last_error:
             self.logger.debug(
                 "fetch failed completely url=%s reason=%s",
@@ -420,11 +481,11 @@ class HttpClient:
         return FetchResult(
             ok=False,
             requested_url=normalized_url,
-            final_url=normalized_url,
-            status_code=None,
+            final_url=last_final_url,
+            status_code=last_status_code,
             text="",
             headers={},
-            tier="failed",
-            elapsed_ms=0,
+            tier=last_tier,
+            elapsed_ms=last_elapsed_ms,
             error=last_error or "fetch-failed",
         )

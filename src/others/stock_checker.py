@@ -8,9 +8,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from src.misc.config_loader import dump_json, load_json
+from src.misc.config_loader import coerce_positive_int, dump_json, load_json
 from src.misc.http_client import HttpClient
 from src.misc.logger import get_logger
+from src.misc.stock_state import count_stock_states, stock_value_from_record
 from src.parsers.hostbill_parser import parse_hostbill_page
 from src.parsers.whmcs_parser import parse_whmcs_page
 
@@ -30,24 +31,6 @@ def _stock_key(item: dict[str, Any]) -> str:
     return str(item.get("canonical_url") or item.get("source_url") or "")
 
 
-def _coerce_stock_value(item: dict[str, Any]) -> int:
-    """Normalize stock state to the internal integer representation."""
-    if "in_stock" in item:
-        try:
-            value = int(item["in_stock"])
-        except (TypeError, ValueError):
-            value = -1
-        if value in {-1, 0, 1}:
-            return value
-
-    legacy = str(item.get("stock_status", "unknown")).lower()
-    if legacy == "in_stock":
-        return 1
-    if legacy == "out_of_stock":
-        return 0
-    return -1
-
-
 def _snapshot_from_product(item: dict[str, Any]) -> dict[str, Any]:
     """Project a product record into the persisted stock snapshot shape."""
     snapshot: dict[str, Any] = {
@@ -55,7 +38,7 @@ def _snapshot_from_product(item: dict[str, Any]) -> dict[str, Any]:
         "canonical_url": _stock_key(item),
         "site": item.get("site", ""),
         "name_raw": item.get("name_raw", ""),
-        "in_stock": _coerce_stock_value(item),
+        "in_stock": stock_value_from_record(item),
         "checked_at": item.get("checked_at"),
         "evidence": list(item.get("evidence", [])),
     }
@@ -97,18 +80,17 @@ def check_stock(
     products: list[dict[str, Any]], http_client: HttpClient, max_workers: int = 12
 ) -> list[dict[str, Any]]:
     """Check live stock status for all products."""
+    if not products:
+        return []
+
     logger = get_logger("stock_checker")
     now = datetime.now(timezone.utc).isoformat()
+    max_workers = coerce_positive_int(max_workers, default=12)
     rows: list[dict[str, Any]] = []
 
     def _check(item: dict[str, Any]) -> dict[str, Any]:
         product_url = item.get("canonical_url") or item.get("source_url")
-        # Convert legacy stock_status or use in_stock directly
-        if "in_stock" in item:
-            fallback_status = int(item["in_stock"])
-        else:
-            legacy = str(item.get("stock_status", "unknown")).lower()
-            fallback_status = 1 if legacy == "in_stock" else (0 if legacy == "out_of_stock" else -1)
+        fallback_status = stock_value_from_record(item)
 
         response = http_client.get(str(product_url), force_english=True)
         if not response.ok:
@@ -180,7 +162,7 @@ def sync_stock_snapshot(
 
     previous_map = {_stock_key(item): item for item in previous_items if _stock_key(item)}
     targets = (
-        [item for item in product_rows if _coerce_stock_value(item) == -1]
+        [item for item in product_rows if stock_value_from_record(item) == -1]
         if only_unknown
         else list(product_rows)
     )
@@ -202,7 +184,7 @@ def sync_stock_snapshot(
         if not product:
             continue
 
-        product["in_stock"] = _coerce_stock_value(checked)
+        product["in_stock"] = stock_value_from_record(checked)
         product["evidence"] = list(checked.get("evidence", []))
         if "price_raw" in checked:
             product["price_raw"] = checked.get("price_raw", "")
@@ -243,8 +225,8 @@ def merge_with_previous(
     merged: list[dict[str, Any]] = []
     for item in current_items:
         previous = previous_map.get(_stock_key(item))
-        prev_stock = previous.get("in_stock") if previous else None
-        curr_stock = item.get("in_stock")
+        prev_stock = stock_value_from_record(previous) if previous else None
+        curr_stock = stock_value_from_record(item)
         changed = prev_stock is not None and prev_stock != curr_stock
         restocked = prev_stock == 0 and curr_stock == 1
         destocked = prev_stock == 1 and curr_stock == 0
@@ -275,6 +257,7 @@ def write_stock(
     path: str = "data/stock.json",
 ) -> None:
     """Write stock check results to JSON."""
+    counts = count_stock_states(items)
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "run_id": run_id,
@@ -284,7 +267,7 @@ def write_stock(
             "restocked": sum(1 for item in items if item.get("restocked")),
             "destocked": sum(1 for item in items if item.get("destocked")),
             "changed": sum(1 for item in items if item.get("changed")),
-            "unknown": sum(1 for item in items if item.get("in_stock") == -1),
+            "unknown": counts["unknown"],
         },
         "items": items,
     }

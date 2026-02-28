@@ -7,8 +7,10 @@ from src.main_issue_processor import (
     _parse_markdown_form,
     _parse_positive_int,
     _run_site_product_count_test,
+    _telegram_channel_url,
     _validate_site_payload,
 )
+from src.misc.config_loader import reset_cached_config
 
 
 def test_parse_markdown_form() -> None:
@@ -231,3 +233,14 @@ def test_run_site_product_count_test_uses_hostbill_scan_and_deduplicates(monkeyp
 
     assert count == 2
     assert method == "hostbill_pid_scan"
+
+
+def test_telegram_channel_url_reads_runtime_config(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "src.misc.config_loader.load_json",
+        lambda path: {"telegram": {"channel_url": "https://t.me/custom-channel"}},
+    )
+
+    reset_cached_config()
+    assert _telegram_channel_url() == "https://t.me/custom-channel"
+    reset_cached_config()

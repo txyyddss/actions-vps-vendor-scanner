@@ -121,6 +121,33 @@ def test_legacy_stock_status_converted_to_in_stock() -> None:
     assert merged[0]["in_stock"] == 1
 
 
+def test_numeric_string_stock_values_are_normalized() -> None:
+    records = [
+        {
+            "site": "A",
+            "platform": "WHMCS",
+            "canonical_url": "https://example.com/cart.php?a=add&pid=1",
+            "scan_type": "product_scanner",
+            "in_stock": "0",
+            "name_raw": "Plan",
+        },
+    ]
+
+    merged = merge_records([], records, [], previous_products=[])
+    assert merged[0]["in_stock"] == 0
+
+
+def test_diff_products_ignores_equivalent_mixed_stock_formats() -> None:
+    old = [{"canonical_url": "https://a", "in_stock": "1"}]
+    new = [{"canonical_url": "https://a", "stock_status": "in_stock"}]
+
+    added, deleted, changed = diff_products(old, new)
+
+    assert added == []
+    assert deleted == []
+    assert changed == []
+
+
 def test_write_and_load_site_grouped_roundtrip(tmp_path) -> None:
     """write_products produces site-grouped JSON; load_products inflates back to flat list."""
     import json

@@ -84,7 +84,7 @@ def test_main_stock_alert_uses_shared_full_sweep_sync(monkeypatch, tmp_path) -> 
     monkeypatch.setattr(
         main_stock_alert,
         "load_config",
-        lambda path: {"logging": {"level": "INFO", "json_logs": False}, "scanner": {}},
+        lambda path: {"logging": {"level": "INFO", "json_logs": False}, "scanner": {"max_workers": 0}},
     )
     monkeypatch.setattr(main_stock_alert, "setup_logging", lambda level, json_logs: None)
     monkeypatch.setattr(
@@ -122,7 +122,7 @@ def test_main_stock_alert_uses_shared_full_sweep_sync(monkeypatch, tmp_path) -> 
 
     sender = DummyTelegramSender.instances[0]
     assert sync_calls["previous_items"] == []
-    assert sync_calls["max_workers"] == 12
+    assert sync_calls["max_workers"] == 1
     assert sync_calls["only_unknown"] is False
     assert sender.stock_calls == [sync_result.changed_items]
     assert sender.stats_calls[0][1]["total_products"] == 2

@@ -1,5 +1,6 @@
 import pytest
 
+from src.misc.config_loader import reset_cached_config
 from src.misc.url_normalizer import classify_url, normalize_url, should_skip_discovery_url
 
 
@@ -106,3 +107,16 @@ def test_discovery_skip_svg_media_url() -> None:
     skip, reason = should_skip_discovery_url("https://example.com/assets/icon.svg?v=123")
     assert skip is True
     assert "media-or-static-file" in reason
+
+
+def test_url_normalizer_reads_runtime_config_lazily(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "src.misc.config_loader.load_json",
+        lambda path: {"url_normalizer": {"invalid_path_patterns": ["catalog"]}},
+    )
+
+    reset_cached_config()
+    skip, reason = should_skip_discovery_url("https://example.com/catalog")
+    assert skip is True
+    assert "blocked-path:catalog" == reason
+    reset_cached_config()
