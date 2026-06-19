@@ -56,11 +56,11 @@
     },
     "GigsGigsCloud": {
       "hostbill_catid_highwater": 93,
-      "hostbill_pid_highwater": 562
+      "hostbill_pid_highwater": 607
     },
     "DMIT": {
       "whmcs_pid_highwater": 252
     }
   },
-  "updated_at": "2026-06-19T06:14:05.514196+00:00"
+  "updated_at": "2026-06-19T16:24:59.482275+00:00"
 }
